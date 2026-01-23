@@ -83,8 +83,8 @@ const buildSessionKey = (projectId: string, tileId: string) =>
 const createRuntimeTile = (projectId: string, tile: ProjectTile): AgentTile => ({
   ...tile,
   sessionKey: tile.sessionKey || buildSessionKey(projectId, tile.id),
-  model: tile.model ?? null,
-  thinkingLevel: tile.thinkingLevel ?? null,
+  model: tile.model ?? "zai/glm-4.7",
+  thinkingLevel: tile.thinkingLevel ?? "low",
   status: "idle",
   outputLines: [],
   lastResult: null,

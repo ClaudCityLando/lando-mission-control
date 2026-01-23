@@ -1,4 +1,6 @@
 import type React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AgentTile as AgentTileType, TilePosition, TileSize } from "../state/store";
 
 const MIN_SIZE = { width: 280, height: 220 };
@@ -137,14 +139,16 @@ export const AgentTile = ({
           ) : (
             <div className="flex flex-col gap-2">
               {tile.outputLines.map((line, index) => (
-                <pre key={`${tile.id}-line-${index}`} className="whitespace-pre-wrap">
-                  {line}
-                </pre>
+                <div key={`${tile.id}-line-${index}`} className="agent-markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{line}</ReactMarkdown>
+                </div>
               ))}
               {tile.streamText ? (
-                <pre className="whitespace-pre-wrap text-slate-500">
-                  {tile.streamText}
-                </pre>
+                <div className="agent-markdown text-slate-500">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {tile.streamText}
+                  </ReactMarkdown>
+                </div>
               ) : null}
             </div>
           )}

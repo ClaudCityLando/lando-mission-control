@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   GatewayClient,
   GatewayResponseError,
@@ -36,6 +36,7 @@ export type GatewayConnectionState = {
 
 export const useGatewayConnection = (): GatewayConnectionState => {
   const [client] = useState(() => new GatewayClient());
+  const didAutoConnect = useRef(false);
 
   const [gatewayUrl, setGatewayUrl] = useState(() => {
     if (typeof window === "undefined") {
@@ -89,6 +90,13 @@ export const useGatewayConnection = (): GatewayConnectionState => {
       setError(formatGatewayError(err));
     }
   }, [client, gatewayUrl, token]);
+
+  useEffect(() => {
+    if (didAutoConnect.current) return;
+    if (!gatewayUrl.trim()) return;
+    didAutoConnect.current = true;
+    void connect();
+  }, [connect, gatewayUrl]);
 
   const disconnect = useCallback(() => {
     setError(null);

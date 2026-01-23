@@ -5,8 +5,8 @@
   --foreground: #201b16;
   --panel: rgba(255, 255, 255, 0.82);
   --panel-border: rgba(25, 20, 16, 0.12);
-  --accent: #d46b35;
-  --accent-strong: #b7501f;
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
   --muted: #6f655c;
 }
 
@@ -53,6 +53,110 @@ body {
 
 .fade-up-delay {
   animation: fadeUp 600ms ease-out 120ms both;
+}
+
+.agent-markdown {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-markdown p {
+  margin: 0;
+}
+
+.agent-markdown p + p,
+.agent-markdown ul,
+.agent-markdown ol,
+.agent-markdown pre,
+.agent-markdown blockquote,
+.agent-markdown table {
+  margin-top: 0.35rem;
+}
+
+.agent-markdown h1,
+.agent-markdown h2,
+.agent-markdown h3,
+.agent-markdown h4,
+.agent-markdown h5,
+.agent-markdown h6 {
+  margin: 0 0 0.25rem 0;
+}
+
+.agent-markdown h1 + p,
+.agent-markdown h2 + p,
+.agent-markdown h3 + p,
+.agent-markdown h4 + p,
+.agent-markdown h5 + p,
+.agent-markdown h6 + p,
+.agent-markdown h1 + ul,
+.agent-markdown h2 + ul,
+.agent-markdown h3 + ul,
+.agent-markdown h4 + ul,
+.agent-markdown h5 + ul,
+.agent-markdown h6 + ul,
+.agent-markdown h1 + ol,
+.agent-markdown h2 + ol,
+.agent-markdown h3 + ol,
+.agent-markdown h4 + ol,
+.agent-markdown h5 + ol,
+.agent-markdown h6 + ol {
+  margin-top: 0.15rem;
+}
+
+.agent-markdown ul,
+.agent-markdown ol {
+  padding-left: 1.1rem;
+}
+
+.agent-markdown li {
+  margin-top: 0.15rem;
+}
+
+.agent-markdown code {
+  font-family: var(--font-code), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85em;
+  background: rgba(15, 23, 42, 0.08);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.agent-markdown pre {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+}
+
+.agent-markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.agent-markdown blockquote {
+  border-left: 3px solid rgba(15, 23, 42, 0.2);
+  padding-left: 0.75rem;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.agent-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.agent-markdown th,
+.agent-markdown td {
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+}
+
+.agent-markdown a {
+  color: var(--accent-strong);
+  text-decoration: underline;
 }
 
 @keyframes fadeUp {

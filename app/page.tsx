@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CanvasViewport } from "../src/components/CanvasViewport";
 import { ConnectionPanel } from "../src/components/ConnectionPanel";
@@ -283,6 +282,10 @@ const AgentCanvasPage = () => {
     dispatch({ type: "setCanvas", patch: { zoom: 1, offsetX: 0, offsetY: 0 } });
   }, [dispatch]);
 
+  const handleCenterCanvas = useCallback(() => {
+    dispatch({ type: "setCanvas", patch: { offsetX: 0, offsetY: 0 } });
+  }, [dispatch]);
+
   const canvasPatch = useMemo(() => state.canvas, [state.canvas]);
 
   const handleProjectCreate = useCallback(async () => {
@@ -305,185 +308,179 @@ const AgentCanvasPage = () => {
     await deleteProject(project.id);
   }, [deleteProject, project]);
 
-  if (state.loading) {
-    return (
-      <div className="min-h-screen px-6 py-10">
-        <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <div className="glass-panel px-6 py-6 text-slate-700">Loading projects…</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen px-6 py-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-        <HeaderBar
-          projects={state.projects.map((entry) => ({ id: entry.id, name: entry.name }))}
-          activeProjectId={state.activeProjectId}
-          status={status}
-          onProjectChange={(projectId) =>
-            dispatch({
-              type: "setActiveProject",
-              projectId: projectId.trim() ? projectId : null,
-            })
-          }
-          onCreateProject={() => {
-            setProjectWarnings([]);
-            setShowProjectForm((prev) => !prev);
-          }}
-          onDeleteProject={handleProjectDelete}
-          onToggleConnection={() => setShowConnection((prev) => !prev)}
-          onNewAgent={handleNewAgent}
-          zoom={state.canvas.zoom}
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onZoomReset={handleZoomReset}
-        />
-
-        {showProjectForm ? (
-          <div className="glass-panel px-6 py-6">
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Project name
-                  <input
-                    className="h-11 rounded-full border border-slate-300 bg-white/80 px-4 text-sm text-slate-900 outline-none"
-                    value={projectName}
-                    onChange={(event) => setProjectName(event.target.value)}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Repo path (absolute)
-                  <input
-                    className="h-11 rounded-full border border-slate-300 bg-white/80 px-4 text-sm text-slate-900 outline-none"
-                    value={projectPath}
-                    onChange={(event) => setProjectPath(event.target.value)}
-                    placeholder="/Users/you/project"
-                  />
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white"
-                  type="button"
-                  onClick={handleProjectCreate}
-                >
-                  Create Project
-                </button>
-                <button
-                  className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700"
-                  type="button"
-                  onClick={() => setShowProjectForm(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-              {projectWarnings.length > 0 ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-                  {projectWarnings.join(" ")}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {showConnection ? (
-          <div className="glass-panel px-6 py-6">
-            <ConnectionPanel
-              gatewayUrl={gatewayUrl}
-              token={token}
-              status={status}
-              error={gatewayError}
-              onGatewayUrlChange={setGatewayUrl}
-              onTokenChange={setToken}
-              onConnect={connect}
-              onDisconnect={disconnect}
-            />
-          </div>
-        ) : null}
-
-        {state.error ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-            {state.error}
-          </div>
-        ) : null}
-
-        {project ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm text-slate-600">
-              <span>{tiles.length} agents</span>
-              <span>•</span>
-              <span className="truncate">{project.repoPath}</span>
-              <span>•</span>
-              <Link className="font-semibold text-slate-900" href="/explorer">
-                Protocol Explorer
-              </Link>
-            </div>
-            <button
-              className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700"
-              type="button"
-              onClick={() =>
-                dispatch({ type: "setCanvas", patch: { offsetX: 0, offsetY: 0 } })
-              }
-            >
-              Center Canvas
-            </button>
-          </div>
-        ) : (
-          <div className="glass-panel px-6 py-8 text-slate-600">
-            Create a project to begin.
-          </div>
-        )}
-
-        {project ? (
-          <CanvasViewport
-            tiles={tiles}
-            transform={canvasPatch}
-            selectedTileId={state.selectedTileId}
-            canSend={status === "connected"}
-            onSelectTile={(id) => dispatch({ type: "selectTile", tileId: id })}
-            onMoveTile={(id, position) =>
-              dispatch({
+    <div className="relative h-screen w-screen overflow-hidden">
+      <CanvasViewport
+        tiles={tiles}
+        transform={canvasPatch}
+        selectedTileId={state.selectedTileId}
+        canSend={status === "connected"}
+        onSelectTile={(id) => dispatch({ type: "selectTile", tileId: id })}
+        onMoveTile={(id, position) =>
+          project
+            ? dispatch({
                 type: "updateTile",
                 projectId: project.id,
                 tileId: id,
                 patch: { position },
               })
-            }
-            onResizeTile={(id, size) =>
-              dispatch({
+            : null
+        }
+        onResizeTile={(id, size) =>
+          project
+            ? dispatch({
                 type: "updateTile",
                 projectId: project.id,
                 tileId: id,
                 patch: { size },
               })
-            }
-            onDeleteTile={(id) =>
-              dispatch({ type: "removeTile", projectId: project.id, tileId: id })
-            }
-            onRenameTile={(id, name) =>
-              dispatch({
+            : null
+        }
+        onDeleteTile={(id) =>
+          project
+            ? dispatch({ type: "removeTile", projectId: project.id, tileId: id })
+            : null
+        }
+        onRenameTile={(id, name) =>
+          project
+            ? dispatch({
                 type: "updateTile",
                 projectId: project.id,
                 tileId: id,
                 patch: { name },
               })
-            }
-            onDraftChange={(id, value) =>
-              dispatch({
+            : null
+        }
+        onDraftChange={(id, value) =>
+          project
+            ? dispatch({
                 type: "updateTile",
                 projectId: project.id,
                 tileId: id,
                 patch: { draft: value },
               })
+            : null
+        }
+        onSend={handleSend}
+        onModelChange={handleModelChange}
+        onThinkingChange={handleThinkingChange}
+        onUpdateTransform={(patch) => dispatch({ type: "setCanvas", patch })}
+      />
+
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col gap-4 p-6">
+        <div className="pointer-events-auto mx-auto w-full max-w-6xl">
+          <HeaderBar
+            projects={state.projects.map((entry) => ({ id: entry.id, name: entry.name }))}
+            activeProjectId={state.activeProjectId}
+            status={status}
+            onProjectChange={(projectId) =>
+              dispatch({
+                type: "setActiveProject",
+                projectId: projectId.trim() ? projectId : null,
+              })
             }
-            onSend={handleSend}
-            onModelChange={handleModelChange}
-            onThinkingChange={handleThinkingChange}
-            onUpdateTransform={(patch) => dispatch({ type: "setCanvas", patch })}
+            onCreateProject={() => {
+              setProjectWarnings([]);
+              setShowProjectForm((prev) => !prev);
+            }}
+            onDeleteProject={handleProjectDelete}
+            onToggleConnection={() => setShowConnection((prev) => !prev)}
+            onNewAgent={handleNewAgent}
+            onCenterCanvas={handleCenterCanvas}
+            zoom={state.canvas.zoom}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onZoomReset={handleZoomReset}
           />
+        </div>
+
+        {state.loading ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+            <div className="glass-panel px-6 py-6 text-slate-700">Loading projects…</div>
+          </div>
         ) : null}
+
+        {showProjectForm ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-5xl">
+            <div className="glass-panel px-6 py-6">
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Project name
+                    <input
+                      className="h-11 rounded-full border border-slate-300 bg-white/80 px-4 text-sm text-slate-900 outline-none"
+                      value={projectName}
+                      onChange={(event) => setProjectName(event.target.value)}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Repo path (absolute)
+                    <input
+                      className="h-11 rounded-full border border-slate-300 bg-white/80 px-4 text-sm text-slate-900 outline-none"
+                      value={projectPath}
+                      onChange={(event) => setProjectPath(event.target.value)}
+                      placeholder="/Users/you/project"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white"
+                    type="button"
+                    onClick={handleProjectCreate}
+                  >
+                    Create Project
+                  </button>
+                  <button
+                    className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700"
+                    type="button"
+                    onClick={() => setShowProjectForm(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {projectWarnings.length > 0 ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+                    {projectWarnings.join(" ")}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showConnection ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+            <div className="glass-panel px-6 py-6">
+              <ConnectionPanel
+                gatewayUrl={gatewayUrl}
+                token={token}
+                status={status}
+                error={gatewayError}
+                onGatewayUrlChange={setGatewayUrl}
+                onTokenChange={setToken}
+                onConnect={connect}
+                onDisconnect={disconnect}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {state.error ? (
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+              {state.error}
+            </div>
+          </div>
+        ) : null}
+
+        {project ? null : (
+          <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+            <div className="glass-panel px-6 py-8 text-slate-600">
+              Create a project to begin.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

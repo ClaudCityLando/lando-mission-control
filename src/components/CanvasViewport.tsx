@@ -89,7 +89,7 @@ export const CanvasViewport = ({
   return (
     <div
       ref={viewportRef}
-      className="canvas-surface relative h-[70vh] min-h-[520px] w-full overflow-hidden"
+      className="canvas-surface relative h-full w-full overflow-hidden"
       onPointerDown={handlePointerDown}
     >
       <div className="absolute inset-0" style={scaledStyle}>

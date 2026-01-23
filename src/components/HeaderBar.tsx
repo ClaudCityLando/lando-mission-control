@@ -9,6 +9,7 @@ type HeaderBarProps = {
   onDeleteProject: () => void;
   onToggleConnection: () => void;
   onNewAgent: () => void;
+  onCenterCanvas: () => void;
   zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -30,6 +31,7 @@ export const HeaderBar = ({
   onDeleteProject,
   onToggleConnection,
   onNewAgent,
+  onCenterCanvas,
   zoom,
   onZoomIn,
   onZoomOut,
@@ -38,51 +40,60 @@ export const HeaderBar = ({
   const hasProjects = projects.length > 0;
 
   return (
-    <div className="glass-panel flex flex-wrap items-center justify-between gap-4 px-6 py-4">
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-          Project
-        </span>
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            className="h-10 rounded-full border border-slate-300 bg-white/80 px-4 text-sm font-semibold text-slate-900 outline-none"
-            value={activeProjectId ?? ""}
-            onChange={(event) => onProjectChange(event.target.value)}
-            disabled={!hasProjects}
-          >
-            {hasProjects ? null : <option value="">No projects</option>}
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
-            type="button"
-            onClick={onCreateProject}
-          >
-            New Project
-          </button>
-          <button
-            className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
-            type="button"
-            onClick={onDeleteProject}
-            disabled={!activeProjectId}
-          >
-            Delete
-          </button>
-          <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyles[status]}`}
-          >
-            {status}
-          </span>
+    <div className="glass-panel flex flex-col gap-3 px-6 py-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+          {hasProjects ? (
+            projects.map((project) => {
+              const isActive = project.id === activeProjectId;
+              return (
+                <button
+                  key={project.id}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    isActive
+                      ? "bg-slate-900 text-white"
+                      : "border border-slate-300 bg-white/80 text-slate-700 hover:border-slate-400"
+                  }`}
+                  type="button"
+                  onClick={() => onProjectChange(project.id)}
+                >
+                  {project.name}
+                </button>
+              );
+            })
+          ) : (
+            <span className="text-sm font-semibold text-slate-500">No projects</span>
+          )}
         </div>
+        <button
+          className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+          type="button"
+          onClick={onCreateProject}
+        >
+          New Project
+        </button>
+        <button
+          className="rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+          type="button"
+          onClick={onDeleteProject}
+          disabled={!activeProjectId}
+        >
+          Delete
+        </button>
+        <span
+          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusStyles[status]}`}
+        >
+          {status}
+        </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:border-slate-400"
+          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+            status === "connected"
+              ? "bg-emerald-500 text-white hover:bg-emerald-600"
+              : "border border-slate-300 text-slate-900 hover:border-slate-400"
+          }`}
           type="button"
           onClick={onToggleConnection}
         >
@@ -95,6 +106,13 @@ export const HeaderBar = ({
           disabled={!activeProjectId}
         >
           New Agent
+        </button>
+        <button
+          className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700"
+          type="button"
+          onClick={onCenterCanvas}
+        >
+          Center Canvas
         </button>
         <div className="flex items-center gap-2 rounded-full border border-slate-300 px-3 py-2">
           <button
