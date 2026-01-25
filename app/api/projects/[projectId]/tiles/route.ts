@@ -186,8 +186,8 @@ export async function POST(
       sessionKey,
       model: null,
       thinkingLevel: null,
-      position: { x: 80 + offset, y: 80 + offset },
-      size: { width: 360, height: 280 },
+      position: { x: 80 + offset, y: 200 + offset },
+      size: { width: 720, height: 560 },
     };
 
     const nextStore = updateStoreProject(store, trimmedProjectId, tile);
