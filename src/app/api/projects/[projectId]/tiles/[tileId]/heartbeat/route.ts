@@ -8,7 +8,7 @@ import {
   type AgentEntry,
   writeAgentList,
 } from "@/lib/clawdbot/config";
-import { resolveProjectTile } from "@/lib/projects/resolve";
+import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
 import type {
   ProjectTileHeartbeat,
   ProjectTileHeartbeatUpdatePayload,
@@ -91,12 +91,9 @@ export async function GET(
   try {
     const { projectId, tileId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { tile } = resolved;
     const { config } = loadClawdbotConfig();
@@ -122,12 +119,9 @@ export async function PUT(
   try {
     const { projectId, tileId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { tile } = resolved;
     const body = (await request.json()) as ProjectTileHeartbeatUpdatePayload;

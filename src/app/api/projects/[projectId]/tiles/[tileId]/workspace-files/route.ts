@@ -9,7 +9,7 @@ import {
   readWorkspaceFiles,
   writeWorkspaceFiles,
 } from "@/lib/projects/workspaceFiles.server";
-import { resolveProjectTile } from "@/lib/projects/resolve";
+import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
 import type { ProjectTileWorkspaceFilesUpdatePayload } from "@/lib/projects/types";
 import { loadStore } from "../../../../store";
 
@@ -22,12 +22,9 @@ export async function GET(
   try {
     const { projectId, tileId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, tile } = resolved;
     const workspaceDir = resolveAgentWorkspaceDir(resolvedProjectId, tile.agentId);
@@ -50,12 +47,9 @@ export async function PUT(
   try {
     const { projectId, tileId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, tile } = resolved;
     const workspaceDir = resolveAgentWorkspaceDir(resolvedProjectId, tile.agentId);

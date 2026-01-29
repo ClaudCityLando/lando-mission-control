@@ -13,7 +13,7 @@ import type {
 } from "@/lib/projects/types";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { resolveStateDir } from "@/lib/clawdbot/paths";
-import { resolveProject } from "@/lib/projects/resolve";
+import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
 import {
   loadClawdbotConfig,
   saveClawdbotConfig,
@@ -64,12 +64,9 @@ export async function POST(
     }
 
     const store = loadStore();
-    const resolved = resolveProject(store, projectId);
+    const resolved = resolveProjectOrResponse(store, projectId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, project } = resolved;
 

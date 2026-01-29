@@ -4,7 +4,7 @@ import { logger } from "@/lib/logger";
 import type { ProjectTileUpdatePayload } from "@/lib/projects/types";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { deleteAgentArtifacts } from "@/lib/projects/fs.server";
-import { resolveProjectTile } from "@/lib/projects/resolve";
+import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
 import {
   loadClawdbotConfig,
   removeAgentEntry,
@@ -22,12 +22,9 @@ export async function DELETE(
   try {
     const { projectId, tileId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
 
@@ -87,12 +84,9 @@ export async function PATCH(
     }
 
     const store = loadStore();
-    const resolved = resolveProjectTile(store, projectId, tileId);
+    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
 

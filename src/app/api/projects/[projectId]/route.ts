@@ -7,7 +7,7 @@ import {
   saveClawdbotConfig,
 } from "@/lib/clawdbot/config";
 import { deleteAgentArtifacts } from "@/lib/projects/fs.server";
-import { resolveProject } from "@/lib/projects/resolve";
+import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
 import { loadStore, removeProjectFromStore, saveStore } from "../store";
 
 export const runtime = "nodejs";
@@ -19,12 +19,9 @@ export async function DELETE(
   try {
     const { projectId } = await context.params;
     const store = loadStore();
-    const resolved = resolveProject(store, projectId);
+    const resolved = resolveProjectOrResponse(store, projectId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
     const { projectId: resolvedProjectId, project } = resolved;
 

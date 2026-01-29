@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { createDiscordChannelForAgent } from "@/lib/discord/discordChannel";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
-import { resolveProject } from "@/lib/projects/resolve";
+import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
 import { loadStore } from "../../store";
 
 export const runtime = "nodejs";
@@ -32,12 +32,9 @@ export async function POST(
     }
 
     const store = loadStore();
-    const resolved = resolveProject(store, projectId);
+    const resolved = resolveProjectOrResponse(store, projectId);
     if (!resolved.ok) {
-      return NextResponse.json(
-        { error: resolved.error.message },
-        { status: resolved.error.status }
-      );
+      return resolved.response;
     }
 
     const workspaceDir = resolveAgentWorkspaceDir(resolved.projectId, agentId);
