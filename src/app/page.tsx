@@ -45,6 +45,7 @@ import { parseAgentIdFromSessionKey, buildAgentMainSessionKey } from "@/lib/gate
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { fetchStudioSettings, updateStudioSettings } from "@/lib/studio/client";
 import { resolveGatewayLayout, type StudioAgentLayout } from "@/lib/studio/settings";
+import { BrushCleaning } from "lucide-react";
 // (CANVAS_BASE_ZOOM import removed)
 
 type ChatHistoryMessage = Record<string, unknown>;
@@ -233,24 +234,31 @@ const buildHistoryLines = (messages: ChatHistoryMessage[]) => {
 
 const buildMissingAgentLayouts = (params: {
   agentIds: string[];
-  existingLayouts: Record<string, StudioAgentLayout> | null;
+  occupiedLayouts?: Record<string, StudioAgentLayout> | null;
+  sizeByAgent?: Record<string, { width: number; height: number }>;
+  avatarSeedByAgent?: Record<string, string | null>;
   viewportSize: { width: number; height: number };
   headerOffset: number;
   canvas: CanvasTransform;
+  defaultSize?: { width: number; height: number };
 }) => {
   const layouts: Record<string, StudioAgentLayout> = {};
-  const existingLayouts = params.existingLayouts ?? {};
-  const occupiedRects = Object.values(existingLayouts).map((entry) => ({
+  const occupiedLayouts = params.occupiedLayouts ?? {};
+  const occupiedRects = Object.values(occupiedLayouts).map((entry) => ({
     x: entry.position.x,
     y: entry.position.y,
     width: entry.size.width,
     height: entry.size.height,
   }));
+  const sizeByAgent = params.sizeByAgent ?? {};
+  const avatarSeedByAgent = params.avatarSeedByAgent ?? {};
+  const fallbackSize = params.defaultSize ?? MIN_TILE_SIZE;
   const zoom = params.canvas.zoom;
-  const tileWidth = MIN_TILE_SIZE.width;
-  const tileHeight = MIN_TILE_SIZE.height;
-  const stepX = tileWidth * zoom + DEFAULT_TILE_GAP.x;
-  const stepY = tileHeight * zoom + DEFAULT_TILE_GAP.y;
+  const sizes = params.agentIds.map((agentId) => sizeByAgent[agentId] ?? fallbackSize);
+  const maxWidth = Math.max(fallbackSize.width, ...sizes.map((size) => size.width));
+  const maxHeight = Math.max(fallbackSize.height, ...sizes.map((size) => size.height));
+  const stepX = maxWidth * zoom + DEFAULT_TILE_GAP.x;
+  const stepY = maxHeight * zoom + DEFAULT_TILE_GAP.y;
   const safeX = 32;
   const safeY = Math.max(32, params.headerOffset + 24);
   const availableWidth =
@@ -261,7 +269,7 @@ const buildMissingAgentLayouts = (params: {
 
   let cursor = 0;
   for (const agentId of params.agentIds) {
-    if (existingLayouts[agentId]) continue;
+    const size = sizeByAgent[agentId] ?? fallbackSize;
     while (true) {
       const col = cursor % columns;
       const row = Math.floor(cursor / columns);
@@ -271,12 +279,12 @@ const buildMissingAgentLayouts = (params: {
         y: safeY + row * stepY,
       };
       const position = screenToWorld(params.canvas, screen);
-      const rect = { x: position.x, y: position.y, width: tileWidth, height: tileHeight };
+      const rect = { x: position.x, y: position.y, width: size.width, height: size.height };
       if (isOccupied(rect)) continue;
       layouts[agentId] = {
         position,
-        size: { width: tileWidth, height: tileHeight },
-        avatarSeed: agentId,
+        size: { width: size.width, height: size.height },
+        avatarSeed: avatarSeedByAgent[agentId] ?? agentId,
       };
       occupiedRects.push(rect);
       break;
@@ -725,13 +733,19 @@ const AgentCanvasPage = () => {
         settingsResult.settings && gatewayUrl
           ? resolveGatewayLayout(settingsResult.settings, gatewayUrl)?.agents ?? null
           : null;
-      const computedLayouts = buildMissingAgentLayouts({
-        agentIds: agentsResult.agents.map((agent) => agent.id),
-        existingLayouts: layout,
-        viewportSize: viewportSizeRef.current,
-        headerOffset: headerOffsetRef.current,
-        canvas: stateRef.current.canvas,
-      });
+      const missingAgentIds = agentsResult.agents
+        .map((agent) => agent.id)
+        .filter((agentId) => !layout?.[agentId]);
+      const computedLayouts =
+        missingAgentIds.length > 0
+          ? buildMissingAgentLayouts({
+              agentIds: missingAgentIds,
+              occupiedLayouts: layout,
+              viewportSize: viewportSizeRef.current,
+              headerOffset: headerOffsetRef.current,
+              canvas: stateRef.current.canvas,
+            })
+          : {};
       const seeds: AgentSeed[] = agentsResult.agents.map((agent, index) => {
         const layoutEntry = layout?.[agent.id] ?? computedLayouts[agent.id];
         const position = layoutEntry?.position ?? { x: 80 + index * 36, y: 200 + index * 36 };
@@ -1634,6 +1648,46 @@ const AgentCanvasPage = () => {
     [handleRenameAgent]
   );
 
+  const handleCleanUpLayout = useCallback(async () => {
+    if (!gatewayUrl.trim()) return;
+    if (agents.length === 0) return;
+    const sizeByAgent: Record<string, { width: number; height: number }> = {};
+    const avatarSeedByAgent: Record<string, string | null> = {};
+    const agentIds = agents.map((tile) => {
+      sizeByAgent[tile.agentId] = { width: tile.size.width, height: tile.size.height };
+      avatarSeedByAgent[tile.agentId] = tile.avatarSeed ?? null;
+      return tile.agentId;
+    });
+    const layouts = buildMissingAgentLayouts({
+      agentIds,
+      viewportSize: viewportSizeRef.current,
+      headerOffset: headerOffsetRef.current,
+      canvas: stateRef.current.canvas,
+      sizeByAgent,
+      avatarSeedByAgent,
+    });
+    if (Object.keys(layouts).length === 0) return;
+    for (const [agentId, layout] of Object.entries(layouts)) {
+      dispatch({
+        type: "updateAgent",
+        agentId,
+        patch: {
+          position: layout.position,
+          size: layout.size,
+        },
+      });
+    }
+    try {
+      await updateStudioSettings({
+        layouts: {
+          [gatewayUrl.trim()]: { agents: layouts },
+        },
+      });
+    } catch (err) {
+      logger.error("Failed to save clean-up layout.", err);
+    }
+  }, [agents, dispatch, gatewayUrl, updateStudioSettings]);
+
   const handleMoveTile = useCallback(
     (agentId: string, position: { x: number; y: number }) => {
       const tile = agents.find((entry) => entry.agentId === agentId);
@@ -1770,6 +1824,18 @@ const AgentCanvasPage = () => {
             </div>
           </div>
         ) : null}
+
+        <div className="pointer-events-auto mt-auto flex justify-end">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-full border border-input bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:border-ring disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => void handleCleanUpLayout()}
+            disabled={agents.length === 0 || status !== "connected"}
+          >
+            <BrushCleaning className="h-4 w-4" aria-hidden="true" />
+            Clean up
+          </button>
+        </div>
 
       </div>
     </div>
