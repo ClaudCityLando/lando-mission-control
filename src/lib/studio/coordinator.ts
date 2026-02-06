@@ -8,6 +8,7 @@ import type {
 export type StudioSettingsResponse = { settings: StudioSettings };
 
 type FocusedPatch = Record<string, Partial<StudioFocusedPreference> | null>;
+type AvatarsPatch = Record<string, Record<string, string | null> | null>;
 
 export type StudioSettingsCoordinatorTransport = {
   fetchSettings: () => Promise<StudioSettingsResponse>;
@@ -25,6 +26,27 @@ const mergeFocusedPatch = (
   };
 };
 
+const mergeAvatarsPatch = (
+  current: AvatarsPatch | undefined,
+  next: AvatarsPatch | undefined
+): AvatarsPatch | undefined => {
+  if (!current && !next) return undefined;
+  const merged: AvatarsPatch = { ...(current ?? {}) };
+  for (const [gatewayKey, value] of Object.entries(next ?? {})) {
+    if (value === null) {
+      merged[gatewayKey] = null;
+      continue;
+    }
+    const existing = merged[gatewayKey];
+    if (existing && existing !== null) {
+      merged[gatewayKey] = { ...existing, ...value };
+      continue;
+    }
+    merged[gatewayKey] = { ...value };
+  }
+  return merged;
+};
+
 const mergeStudioPatch = (
   current: StudioSettingsPatch | null,
   next: StudioSettingsPatch
@@ -33,9 +55,11 @@ const mergeStudioPatch = (
     return {
       ...(next.gateway !== undefined ? { gateway: next.gateway } : {}),
       ...(next.focused ? { focused: { ...next.focused } } : {}),
+      ...(next.avatars ? { avatars: { ...next.avatars } } : {}),
     };
   }
   const focused = mergeFocusedPatch(current.focused, next.focused);
+  const avatars = mergeAvatarsPatch(current.avatars, next.avatars);
   return {
     ...(next.gateway !== undefined
       ? { gateway: next.gateway }
@@ -43,6 +67,7 @@ const mergeStudioPatch = (
         ? { gateway: current.gateway }
         : {}),
     ...(focused ? { focused } : {}),
+    ...(avatars ? { avatars } : {}),
   };
 };
 

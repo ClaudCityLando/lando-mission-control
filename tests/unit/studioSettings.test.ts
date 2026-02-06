@@ -11,6 +11,7 @@ describe("studio settings normalization", () => {
     expect(normalized.version).toBe(1);
     expect(normalized.gateway).toBeNull();
     expect(normalized.focused).toEqual({});
+    expect(normalized.avatars).toEqual({});
   });
 
   it("normalizes gateway entries", () => {
@@ -73,6 +74,46 @@ describe("studio settings normalization", () => {
       mode: "focused",
       selectedAgentId: "main",
       filter: "needs-attention",
+    });
+  });
+
+  it("normalizes avatar seeds per gateway", () => {
+    const normalized = normalizeStudioSettings({
+      avatars: {
+        " ws://localhost:18789 ": {
+          " agent-1 ": " seed-1 ",
+          " agent-2 ": " ",
+        },
+        bad: "nope",
+      },
+    });
+
+    expect(normalized.avatars["ws://localhost:18789"]).toEqual({
+      "agent-1": "seed-1",
+    });
+  });
+
+  it("merges avatar patches", () => {
+    const current = normalizeStudioSettings({
+      avatars: {
+        "ws://localhost:18789": {
+          "agent-1": "seed-1",
+        },
+      },
+    });
+
+    const merged = mergeStudioSettings(current, {
+      avatars: {
+        "ws://localhost:18789": {
+          "agent-1": "seed-2",
+          "agent-2": "seed-3",
+        },
+      },
+    });
+
+    expect(merged.avatars["ws://localhost:18789"]).toEqual({
+      "agent-1": "seed-2",
+      "agent-2": "seed-3",
     });
   });
 });

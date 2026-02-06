@@ -82,7 +82,7 @@ import {
 } from "@/lib/gateway/sessionKeys";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { getStudioSettingsCoordinator } from "@/lib/studio/coordinator";
-import { resolveFocusedPreference } from "@/lib/studio/settings";
+import { resolveAgentAvatarSeed, resolveFocusedPreference } from "@/lib/studio/settings";
 import { applySessionSettingMutation } from "@/features/agents/state/sessionSettingsMutations";
 import { syncGatewaySessionSettings } from "@/lib/gateway/GatewayClient";
 import { fetchJson } from "@/lib/http";
@@ -678,6 +678,15 @@ const AgentStudioPage = () => {
     if (status !== "connected") return;
     setLoading(true);
     try {
+      const gatewayKey = gatewayUrl.trim();
+      let settings: Awaited<ReturnType<typeof settingsCoordinator.loadSettings>> | null = null;
+      if (gatewayKey) {
+        try {
+          settings = await settingsCoordinator.loadSettings();
+        } catch (err) {
+          console.error("Failed to load studio settings while loading agents.", err);
+        }
+      }
       const agentsResult = await client.call<AgentsListResult>("agents.list", {});
       const sessionKeysByAgent = new Map<string, Set<string>>();
       await Promise.all(
@@ -706,7 +715,9 @@ const AgentStudioPage = () => {
       );
       const mainKey = agentsResult.mainKey?.trim() || "main";
       const seeds: AgentStoreSeed[] = agentsResult.agents.map((agent) => {
-        const avatarSeed = agent.id;
+        const persistedSeed =
+          settings && gatewayKey ? resolveAgentAvatarSeed(settings, gatewayKey, agent.id) : null;
+        const avatarSeed = persistedSeed ?? agent.id;
         const avatarUrl = resolveAgentAvatarUrl(agent);
         const name = resolveAgentName(agent);
         return {
@@ -741,6 +752,8 @@ const AgentStudioPage = () => {
     resolveAgentName,
     setError,
     setLoading,
+    gatewayUrl,
+    settingsCoordinator,
     status,
   ]);
 
@@ -2148,8 +2161,20 @@ const AgentStudioPage = () => {
         agentId,
         patch: { avatarSeed },
       });
+      const key = gatewayUrl.trim();
+      if (!key) return;
+      settingsCoordinator.schedulePatch(
+        {
+          avatars: {
+            [key]: {
+              [agentId]: avatarSeed,
+            },
+          },
+        },
+        0
+      );
     },
-    [dispatch]
+    [dispatch, gatewayUrl, settingsCoordinator]
   );
 
   const handleDraftChange = useCallback(
