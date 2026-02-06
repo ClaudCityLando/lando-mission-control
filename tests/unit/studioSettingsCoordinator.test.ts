@@ -52,14 +52,14 @@ describe("StudioSettingsCoordinator", () => {
     const coordinator = new StudioSettingsCoordinator({ fetchSettings, updateSettings }, 1000);
 
     coordinator.schedulePatch({
-      sessions: { "ws://localhost:18789": "session-a" },
+      gateway: { url: "ws://localhost:18789", token: "session-a" },
     });
 
     await coordinator.flushPending();
 
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith({
-      sessions: { "ws://localhost:18789": "session-a" },
+      gateway: { url: "ws://localhost:18789", token: "session-a" },
     });
 
     await vi.advanceTimersByTimeAsync(2000);
