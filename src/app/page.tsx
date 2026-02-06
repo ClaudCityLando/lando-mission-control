@@ -312,6 +312,8 @@ const AgentStudioPage = () => {
   const specialUpdateInFlightRef = useRef<Set<string>>(new Set());
   const toolLinesSeenRef = useRef<Map<string, Set<string>>>(new Map());
   const assistantStreamByRunRef = useRef<Map<string, string>>(new Map());
+  const pendingDraftValuesRef = useRef<Map<string, string>>(new Map());
+  const pendingDraftTimersRef = useRef<Map<string, number>>(new Map());
 
   const agents = state.agents;
   const selectedAgent = useMemo(() => getSelectedAgent(state), [state]);
@@ -350,9 +352,45 @@ const AgentStudioPage = () => {
   const hasRunningAgents = runningAgentCount > 0;
   const queuedConfigMutationCount = queuedConfigMutations.length;
 
-  const handleFocusFilterChange = useCallback((next: FocusFilter) => {
-    focusFilterTouchedRef.current = true;
-    setFocusFilter(next);
+  const flushPendingDraft = useCallback(
+    (agentId: string | null) => {
+      if (!agentId) return;
+      const timer = pendingDraftTimersRef.current.get(agentId) ?? null;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        pendingDraftTimersRef.current.delete(agentId);
+      }
+      const value = pendingDraftValuesRef.current.get(agentId);
+      if (value === undefined) return;
+      pendingDraftValuesRef.current.delete(agentId);
+      dispatch({
+        type: "updateAgent",
+        agentId,
+        patch: { draft: value },
+      });
+    },
+    [dispatch]
+  );
+
+  const handleFocusFilterChange = useCallback(
+    (next: FocusFilter) => {
+      flushPendingDraft(focusedAgent?.agentId ?? null);
+      focusFilterTouchedRef.current = true;
+      setFocusFilter(next);
+    },
+    [flushPendingDraft, focusedAgent]
+  );
+
+  useEffect(() => {
+    const timers = pendingDraftTimersRef.current;
+    const values = pendingDraftValuesRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+      values.clear();
+    };
   }, []);
 
   const enqueueConfigMutation = useCallback(
@@ -1026,12 +1064,13 @@ const AgentStudioPage = () => {
 
   const handleOpenAgentSettings = useCallback(
     (agentId: string) => {
+      flushPendingDraft(focusedAgent?.agentId ?? null);
       setBrainPanelOpen(false);
       setSettingsAgentId(agentId);
       setMobilePane("settings");
       dispatch({ type: "selectAgent", agentId });
     },
-    [dispatch]
+    [dispatch, flushPendingDraft, focusedAgent]
   );
 
   const handleBrainToggle = useCallback(() => {
@@ -1302,6 +1341,7 @@ const AgentStudioPage = () => {
             return { ...current, phase: "creating" };
           });
           const created = await createGatewayAgent({ client, name });
+          flushPendingDraft(focusedAgent?.agentId ?? null);
           focusFilterTouchedRef.current = true;
           setFocusFilter("all");
           dispatch({ type: "selectAgent", agentId: created.id });
@@ -1330,6 +1370,8 @@ const AgentStudioPage = () => {
     createAgentBusy,
     createAgentBlock,
     deleteAgentBlock,
+    flushPendingDraft,
+    focusedAgent,
     renameAgentBlock,
     dispatch,
     enqueueConfigMutation,
@@ -2112,11 +2154,23 @@ const AgentStudioPage = () => {
 
   const handleDraftChange = useCallback(
     (agentId: string, value: string) => {
-      dispatch({
-        type: "updateAgent",
-        agentId,
-        patch: { draft: value },
-      });
+      pendingDraftValuesRef.current.set(agentId, value);
+      const existingTimer = pendingDraftTimersRef.current.get(agentId) ?? null;
+      if (existingTimer !== null) {
+        window.clearTimeout(existingTimer);
+      }
+      const timer = window.setTimeout(() => {
+        pendingDraftTimersRef.current.delete(agentId);
+        const pending = pendingDraftValuesRef.current.get(agentId);
+        if (pending === undefined) return;
+        pendingDraftValuesRef.current.delete(agentId);
+        dispatch({
+          type: "updateAgent",
+          agentId,
+          patch: { draft: pending },
+        });
+      }, 250);
+      pendingDraftTimersRef.current.set(agentId, timer);
     },
     [dispatch]
   );
@@ -2290,6 +2344,7 @@ const AgentStudioPage = () => {
                 createDisabled={status !== "connected" || createAgentBusy || state.loading}
                 createBusy={createAgentBusy}
                 onSelectAgent={(agentId) => {
+                  flushPendingDraft(focusedAgent?.agentId ?? null);
                   dispatch({ type: "selectAgent", agentId });
                   setMobilePane("chat");
                 }}

@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type MutableRefObject,
+} from "react";
 import type { AgentState as AgentRecord } from "@/features/agents/state/store";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -6,7 +16,7 @@ import { Cog, Shuffle } from "lucide-react";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { isToolMarkdown, isTraceMarkdown } from "@/lib/text/message-extract";
 import { AgentAvatar } from "./AgentAvatar";
-import { buildAgentChatItems, summarizeToolLabel } from "./chatItems";
+import { buildAgentChatItems, summarizeToolLabel, type AgentChatItem } from "./chatItems";
 import { EmptyStatePanel } from "./EmptyStatePanel";
 
 type AgentChatPanelProps = {
@@ -24,6 +34,211 @@ type AgentChatPanelProps = {
   onAvatarShuffle: () => void;
 };
 
+const AgentChatTranscript = memo(function AgentChatTranscript({
+  agentId,
+  name,
+  avatarSeed,
+  avatarUrl,
+  status,
+  chatItems,
+  autoExpandThinking,
+  lastThinkingItemIndex,
+  showTypingIndicator,
+  outputLineCount,
+  scrollToBottomNextOutputRef,
+}: {
+  agentId: string;
+  name: string;
+  avatarSeed: string;
+  avatarUrl: string | null;
+  status: AgentRecord["status"];
+  chatItems: AgentChatItem[];
+  autoExpandThinking: boolean;
+  lastThinkingItemIndex: number;
+  showTypingIndicator: boolean;
+  outputLineCount: number;
+  scrollToBottomNextOutputRef: MutableRefObject<boolean>;
+}) {
+  const chatRef = useRef<HTMLDivElement | null>(null);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollChatToBottom = useCallback(() => {
+    if (!chatRef.current) return;
+    if (chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ block: "end" });
+      return;
+    }
+    chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    if (!scrollToBottomNextOutputRef.current) return;
+    scrollToBottomNextOutputRef.current = false;
+    requestAnimationFrame(() => {
+      scrollChatToBottom();
+    });
+  }, [outputLineCount, scrollChatToBottom, scrollToBottomNextOutputRef]);
+
+  return (
+    <div
+      ref={chatRef}
+      className="flex-1 overflow-auto rounded-md border border-border/80 bg-card/75 p-3 sm:p-4"
+      onWheel={(event) => {
+        event.stopPropagation();
+      }}
+      onWheelCapture={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <div className="flex flex-col gap-3 text-xs text-foreground">
+        {chatItems.length === 0 ? (
+          <EmptyStatePanel title="No messages yet." compact className="p-3 text-xs" />
+        ) : (
+          <>
+            {chatItems.map((item, index) => {
+              if (item.kind === "thinking") {
+                return (
+                  <details
+                    key={`chat-${agentId}-thinking-${index}`}
+                    className="rounded-md border border-border/70 bg-muted/55 text-[11px] text-muted-foreground"
+                    open={autoExpandThinking && index === lastThinkingItemIndex}
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] [&::-webkit-details-marker]:hidden">
+                      <AgentAvatar seed={avatarSeed} name={name} avatarUrl={avatarUrl} size={22} />
+                      <span>Thinking</span>
+                      {status === "running" && item.live ? (
+                        <span className="typing-dots" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      ) : null}
+                    </summary>
+                    <div className="agent-markdown px-2 pb-2 text-foreground">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+                    </div>
+                  </details>
+                );
+              }
+              if (item.kind === "user") {
+                return (
+                  <div
+                    key={`chat-${agentId}-user-${index}`}
+                    className="rounded-md border border-border/70 bg-muted/70 px-3 py-2 text-foreground"
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{`> ${item.text}`}</ReactMarkdown>
+                  </div>
+                );
+              }
+              if (item.kind === "tool") {
+                const { summaryText, body } = summarizeToolLabel(item.text);
+                return (
+                  <details
+                    key={`chat-${agentId}-tool-${index}`}
+                    className="rounded-md border border-border/70 bg-muted/55 px-2 py-1 text-[11px] text-muted-foreground"
+                  >
+                    <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
+                      {summaryText}
+                    </summary>
+                    {body ? (
+                      <div className="agent-markdown mt-1 text-foreground">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+                      </div>
+                    ) : null}
+                  </details>
+                );
+              }
+              return (
+                <div
+                  key={`chat-${agentId}-assistant-${index}`}
+                  className={`agent-markdown rounded-md border border-transparent px-0.5 ${item.live ? "opacity-85" : ""}`}
+                >
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+                </div>
+              );
+            })}
+            {showTypingIndicator ? (
+              <div
+                className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/55 px-2 py-1.5 text-[11px] text-muted-foreground"
+                role="status"
+                aria-live="polite"
+                data-testid="agent-typing-indicator"
+              >
+                <AgentAvatar seed={avatarSeed} name={name} avatarUrl={avatarUrl} size={22} />
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
+                  Thinking
+                </span>
+                <span className="typing-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </div>
+            ) : null}
+            <div ref={chatBottomRef} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const AgentChatComposer = memo(function AgentChatComposer({
+  value,
+  onChange,
+  onKeyDown,
+  onSend,
+  onStop,
+  canSend,
+  stopBusy,
+  running,
+  sendDisabled,
+  inputRef,
+}: {
+  value: string;
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSend: () => void;
+  onStop: () => void;
+  canSend: boolean;
+  stopBusy: boolean;
+  running: boolean;
+  sendDisabled: boolean;
+  inputRef: (el: HTMLTextAreaElement | HTMLInputElement | null) => void;
+}) {
+  return (
+    <div className="flex items-end gap-2">
+      <textarea
+        ref={inputRef}
+        rows={1}
+        value={value}
+        className="flex-1 resize-none rounded-md border border-border/80 bg-card/75 px-3 py-2 text-[11px] text-foreground outline-none transition focus:border-ring"
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        placeholder="type a message"
+      />
+      {running ? (
+        <button
+          className="rounded-md border border-border/80 bg-card/70 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-sm transition hover:bg-muted/70 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+          type="button"
+          onClick={onStop}
+          disabled={!canSend || stopBusy}
+        >
+          {stopBusy ? "Stopping" : "Stop"}
+        </button>
+      ) : null}
+      <button
+        className="rounded-md border border-transparent bg-primary px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-foreground shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+        type="button"
+        onClick={onSend}
+        disabled={sendDisabled}
+      >
+        Send
+      </button>
+    </div>
+  );
+});
+
 export const AgentChatPanel = ({
   agent,
   isSelected,
@@ -40,10 +255,9 @@ export const AgentChatPanel = ({
 }: AgentChatPanelProps) => {
   const [draftValue, setDraftValue] = useState(agent.draft);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
-  const chatRef = useRef<HTMLDivElement | null>(null);
-  const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const scrollToBottomNextOutputRef = useRef(false);
   const plainDraftRef = useRef(agent.draft);
+  const pendingResizeFrameRef = useRef<number | null>(null);
 
   const resizeDraft = useCallback(() => {
     const el = draftRef.current;
@@ -65,25 +279,20 @@ export const AgentChatPanel = ({
   }, [agent.draft]);
 
   useEffect(() => {
-    resizeDraft();
-  }, [resizeDraft, agent.draft]);
-
-  const scrollChatToBottom = useCallback(() => {
-    if (!chatRef.current) return;
-    if (chatBottomRef.current) {
-      chatBottomRef.current.scrollIntoView({ block: "end" });
-      return;
+    if (pendingResizeFrameRef.current !== null) {
+      cancelAnimationFrame(pendingResizeFrameRef.current);
     }
-    chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, []);
-
-  useEffect(() => {
-    if (!scrollToBottomNextOutputRef.current) return;
-    scrollToBottomNextOutputRef.current = false;
-    requestAnimationFrame(() => {
-      scrollChatToBottom();
+    pendingResizeFrameRef.current = requestAnimationFrame(() => {
+      pendingResizeFrameRef.current = null;
+      resizeDraft();
     });
-  }, [agent.outputLines.length, scrollChatToBottom]);
+    return () => {
+      if (pendingResizeFrameRef.current !== null) {
+        cancelAnimationFrame(pendingResizeFrameRef.current);
+        pendingResizeFrameRef.current = null;
+      }
+    };
+  }, [resizeDraft, agent.draft]);
 
   const handleSend = useCallback(
     (message: string) => {
@@ -209,6 +418,40 @@ export const AgentChatPanel = ({
   const allowThinking = selectedModel?.reasoning !== false;
 
   const avatarSeed = agent.avatarSeed ?? agent.agentId;
+  const running = agent.status === "running";
+  const sendDisabled = !canSend || running || !draftValue.trim();
+
+  const handleComposerChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      plainDraftRef.current = value;
+      setDraftValue(value);
+      onDraftChange(value);
+      if (pendingResizeFrameRef.current !== null) {
+        cancelAnimationFrame(pendingResizeFrameRef.current);
+      }
+      pendingResizeFrameRef.current = requestAnimationFrame(() => {
+        pendingResizeFrameRef.current = null;
+        resizeDraft();
+      });
+    },
+    [onDraftChange, resizeDraft]
+  );
+
+  const handleComposerKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      handleSend(draftValue);
+    },
+    [draftValue, handleSend]
+  );
+
+  const handleComposerSend = useCallback(() => {
+    handleSend(draftValue);
+  }, [draftValue, handleSend]);
+
   return (
     <div data-agent-panel className="group fade-up relative flex h-full w-full flex-col">
       <div className="px-3 pt-3 sm:px-4 sm:pt-4">
@@ -316,159 +559,32 @@ export const AgentChatPanel = ({
       </div>
 
       <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 sm:px-4 sm:pb-4">
-        <div
-          ref={chatRef}
-          className="flex-1 overflow-auto rounded-md border border-border/80 bg-card/75 p-3 sm:p-4"
-          onWheel={(event) => {
-            event.stopPropagation();
-          }}
-          onWheelCapture={(event) => {
-            event.stopPropagation();
-          }}
-        >
-          <div className="flex flex-col gap-3 text-xs text-foreground">
-            {chatItems.length === 0 ? (
-              <EmptyStatePanel title="No messages yet." compact className="p-3 text-xs" />
-            ) : (
-              <>
-                {chatItems.map((item, index) => {
-                  if (item.kind === "thinking") {
-                    return (
-                      <details
-                        key={`chat-${agent.agentId}-thinking-${index}`}
-                        className="rounded-md border border-border/70 bg-muted/55 text-[11px] text-muted-foreground"
-                        open={autoExpandThinking && index === lastThinkingItemIndex}
-                      >
-                        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] [&::-webkit-details-marker]:hidden">
-                          <AgentAvatar
-                            seed={avatarSeed}
-                            name={agent.name}
-                            avatarUrl={agent.avatarUrl ?? null}
-                            size={22}
-                          />
-                          <span>Thinking</span>
-                          {agent.status === "running" && item.live ? (
-                            <span className="typing-dots" aria-hidden="true">
-                              <span />
-                              <span />
-                              <span />
-                            </span>
-                          ) : null}
-                        </summary>
-                        <div className="agent-markdown px-2 pb-2 text-foreground">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {item.text}
-                          </ReactMarkdown>
-                        </div>
-                      </details>
-                    );
-                  }
-                  if (item.kind === "user") {
-                    return (
-                      <div
-                        key={`chat-${agent.agentId}-user-${index}`}
-                        className="rounded-md border border-border/70 bg-muted/70 px-3 py-2 text-foreground"
-                      >
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{`> ${item.text}`}</ReactMarkdown>
-                      </div>
-                    );
-                  }
-                  if (item.kind === "tool") {
-                    const { summaryText, body } = summarizeToolLabel(item.text);
-                    return (
-                      <details
-                        key={`chat-${agent.agentId}-tool-${index}`}
-                        className="rounded-md border border-border/70 bg-muted/55 px-2 py-1 text-[11px] text-muted-foreground"
-                      >
-                        <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
-                          {summaryText}
-                        </summary>
-                        {body ? (
-                          <div className="agent-markdown mt-1 text-foreground">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
-                          </div>
-                        ) : null}
-                      </details>
-                    );
-                  }
-                  return (
-                    <div
-                      key={`chat-${agent.agentId}-assistant-${index}`}
-                      className={`agent-markdown rounded-md border border-transparent px-0.5 ${item.live ? "opacity-85" : ""}`}
-                    >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
-                    </div>
-                  );
-                })}
-                {showTypingIndicator ? (
-                  <div
-                    className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/55 px-2 py-1.5 text-[11px] text-muted-foreground"
-                    role="status"
-                    aria-live="polite"
-                    data-testid="agent-typing-indicator"
-                  >
-                    <AgentAvatar
-                      seed={avatarSeed}
-                      name={agent.name}
-                      avatarUrl={agent.avatarUrl ?? null}
-                      size={22}
-                    />
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
-                      Thinking
-                    </span>
-                    <span className="typing-dots" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                  </div>
-                ) : null}
-                <div ref={chatBottomRef} />
-              </>
-            )}
-          </div>
-        </div>
+        <AgentChatTranscript
+          agentId={agent.agentId}
+          name={agent.name}
+          avatarSeed={avatarSeed}
+          avatarUrl={agent.avatarUrl ?? null}
+          status={agent.status}
+          chatItems={chatItems}
+          autoExpandThinking={autoExpandThinking}
+          lastThinkingItemIndex={lastThinkingItemIndex}
+          showTypingIndicator={showTypingIndicator}
+          outputLineCount={agent.outputLines.length}
+          scrollToBottomNextOutputRef={scrollToBottomNextOutputRef}
+        />
 
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={handleDraftRef}
-            rows={1}
-            value={draftValue}
-            className="flex-1 resize-none rounded-md border border-border/80 bg-card/75 px-3 py-2 text-[11px] text-foreground outline-none transition focus:border-ring"
-            onChange={(event) => {
-              const value = event.target.value;
-              plainDraftRef.current = value;
-              setDraftValue(value);
-              onDraftChange(value);
-              resizeDraft();
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey) return;
-              if (event.defaultPrevented) return;
-              event.preventDefault();
-              handleSend(draftValue);
-            }}
-            placeholder="type a message"
-          />
-          {agent.status === "running" ? (
-            <button
-              className="rounded-md border border-border/80 bg-card/70 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-sm transition hover:bg-muted/70 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-              type="button"
-              onClick={onStopRun}
-              disabled={!canSend || stopBusy}
-            >
-              {stopBusy ? "Stopping" : "Stop"}
-            </button>
-          ) : null}
-          <button
-            className="rounded-md border border-transparent bg-primary px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-foreground shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-            type="button"
-            onClick={() => handleSend(draftValue)}
-            disabled={!canSend || agent.status === "running" || !draftValue.trim()}
-          >
-            Send
-          </button>
-        </div>
+        <AgentChatComposer
+          value={draftValue}
+          inputRef={handleDraftRef}
+          onChange={handleComposerChange}
+          onKeyDown={handleComposerKeyDown}
+          onSend={handleComposerSend}
+          onStop={onStopRun}
+          canSend={canSend}
+          stopBusy={stopBusy}
+          running={running}
+          sendDisabled={sendDisabled}
+        />
       </div>
     </div>
   );
