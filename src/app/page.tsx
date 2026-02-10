@@ -1788,7 +1788,7 @@ const AgentStudioPage = () => {
             />
           </div>
           <div
-            className={`${mobilePane === "chat" ? "flex" : "hidden"} glass-panel min-h-0 flex-1 overflow-hidden p-2 sm:p-3 xl:flex`}
+            className={`${mobilePane === "chat" ? "flex" : "hidden"} min-h-0 flex-1 overflow-hidden rounded-[16px] bg-card shadow-[0_8px_24px_rgba(0,0,0,0.06)] xl:flex`}
             data-testid="focused-agent-panel"
           >
             {focusedAgent ? (
