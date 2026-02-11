@@ -1390,15 +1390,6 @@ export const AgentBrainPanel = ({
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                    <span>Pronouns</span>
-                    <input
-                      className="h-9 rounded-md border border-border/80 bg-surface-2 px-2 text-xs text-foreground outline-none"
-                      value={draft.user.pronouns}
-                      disabled={inputsDisabled}
-                      onChange={(event) => setUserField("pronouns", event.target.value)}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
                     <span>Timezone</span>
                     <input
                       className="h-9 rounded-md border border-border/80 bg-surface-2 px-2 text-xs text-foreground outline-none"
