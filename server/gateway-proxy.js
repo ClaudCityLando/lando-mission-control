@@ -39,6 +39,17 @@ const resolveOriginForUpstream = (upstreamUrl) => {
   return `${proto}//${url.host}`;
 };
 
+const hasNonEmptyToken = (params) => {
+  const raw = params && isObject(params) && isObject(params.auth) ? params.auth.token : "";
+  return typeof raw === "string" && raw.trim().length > 0;
+};
+
+const hasDeviceSignature = (params) => {
+  const raw =
+    params && isObject(params) && isObject(params.device) ? params.device.signature : null;
+  return typeof raw === "string" && raw.trim().length > 0;
+};
+
 function createGatewayProxy(options) {
   const {
     loadUpstreamSettings,
@@ -145,10 +156,14 @@ function createGatewayProxy(options) {
 
         upstreamWs.on("open", () => {
           upstreamReady = true;
-          const nextParams = injectAuthToken(parsed.params, upstreamToken);
+          if (hasNonEmptyToken(parsed.params) || hasDeviceSignature(parsed.params)) {
+            upstreamWs.send(JSON.stringify(parsed));
+            return;
+          }
+
           const connectFrame = {
             ...parsed,
-            params: nextParams,
+            params: injectAuthToken(parsed.params, upstreamToken),
           };
           upstreamWs.send(JSON.stringify(connectFrame));
         });
