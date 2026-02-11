@@ -44,6 +44,7 @@ const SPINE_LEFT = "left-[15px]";
 const ASSISTANT_GUTTER_CLASS = "pl-[44px]";
 const ASSISTANT_MAX_WIDTH_DEFAULT_CLASS = "max-w-[68ch]";
 const ASSISTANT_MAX_WIDTH_EXPANDED_CLASS = "max-w-[1120px]";
+const CHAT_TOP_THRESHOLD_PX = 8;
 
 const looksLikePath = (value: string): boolean => {
   if (!value) return false;
@@ -479,6 +480,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   const scrollFrameRef = useRef<number | null>(null);
   const pinnedRef = useRef(true);
   const [isPinned, setIsPinned] = useState(true);
+  const [isAtTop, setIsAtTop] = useState(false);
   const [nowMs, setNowMs] = useState<number | null>(null);
 
   const scrollChatToBottom = useCallback(() => {
@@ -499,6 +501,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   const updatePinnedFromScroll = useCallback(() => {
     const el = chatRef.current;
     if (!el) return;
+    const nextAtTop = el.scrollTop <= CHAT_TOP_THRESHOLD_PX;
+    setIsAtTop((current) => (current === nextAtTop ? current : nextAtTop));
     setPinned(
       isNearBottom(
         {
@@ -589,8 +593,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
       >
         <div className="relative flex flex-col gap-4 text-xs text-foreground">
           <div aria-hidden className={`pointer-events-none absolute ${SPINE_LEFT} top-0 bottom-0 w-px bg-border/20`} />
-          {historyMaybeTruncated ? (
-            <div className="sticky top-0 z-10 -mx-1 flex items-center justify-between gap-3 rounded-[10px] border border-border/60 bg-card/85 px-3 py-2 backdrop-blur">
+          {historyMaybeTruncated && isAtTop ? (
+            <div className="-mx-1 flex items-center justify-between gap-3 rounded-[10px] border border-border/60 bg-card/85 px-3 py-2 backdrop-blur">
               <div className="min-w-0 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 Showing most recent {typeof historyFetchedCount === "number" ? historyFetchedCount : "?"} messages
                 {typeof historyFetchLimit === "number" ? ` (limit ${historyFetchLimit})` : ""}

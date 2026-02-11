@@ -106,4 +106,43 @@ describe("AgentChatPanel scrolling", () => {
         .scrollIntoView
     ).toHaveBeenCalled();
   });
+
+  it("shows history truncation banner only when scrolled to top", () => {
+    const agent = createAgent();
+    render(
+      createElement(AgentChatPanel, {
+        agent: {
+          ...agent,
+          historyMaybeTruncated: true,
+          historyFetchedCount: 200,
+          historyFetchLimit: 200,
+          outputLines: ["> hello", "response"],
+        },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const scrollEl = screen.getByTestId("agent-chat-scroll");
+    Object.defineProperty(scrollEl, "clientHeight", { value: 100, configurable: true });
+    Object.defineProperty(scrollEl, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(scrollEl, "scrollTop", { value: 120, writable: true, configurable: true });
+
+    fireEvent.scroll(scrollEl);
+    expect(screen.queryByText(/Showing most recent 200 messages/i)).not.toBeInTheDocument();
+
+    scrollEl.scrollTop = 0;
+    fireEvent.scroll(scrollEl);
+    expect(screen.getByText(/Showing most recent 200 messages/i)).toBeInTheDocument();
+  });
 });
