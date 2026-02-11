@@ -161,6 +161,8 @@ const CRON_TEMPLATE_OPTIONS: CronTemplateOption[] = [
   },
 ];
 
+const resolveLocalTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
 const createInitialCronDraft = (): CronCreateDraft => ({
   templateId: "morning-brief",
   name: "",
@@ -168,67 +170,77 @@ const createInitialCronDraft = (): CronCreateDraft => ({
   scheduleKind: "every",
   everyAmount: 30,
   everyUnit: "minutes",
+  everyAtTime: "09:00",
+  everyTimeZone: resolveLocalTimeZone(),
   deliveryMode: "announce",
   deliveryChannel: "last",
 });
 
 const applyTemplateDefaults = (templateId: CronCreateTemplateId, current: CronCreateDraft): CronCreateDraft => {
+  const nextTimeZone = (current.everyTimeZone ?? "").trim() || resolveLocalTimeZone();
+  const base = {
+    ...createInitialCronDraft(),
+    deliveryMode: current.deliveryMode ?? "announce",
+    deliveryChannel: current.deliveryChannel || "last",
+    deliveryTo: current.deliveryTo,
+    advancedSessionTarget: current.advancedSessionTarget,
+    advancedWakeMode: current.advancedWakeMode,
+    everyTimeZone: nextTimeZone,
+  } satisfies CronCreateDraft;
+
   if (templateId === "morning-brief") {
     return {
-      ...current,
+      ...base,
       templateId,
-      name: current.name || "Morning brief",
-      taskText: current.taskText || "Summarize overnight updates and priorities.",
-      scheduleKind: "cron",
-      cronExpr: current.cronExpr || "0 7 * * *",
-      cronTz: current.cronTz || "America/Chicago",
-      deliveryMode: "announce",
-      deliveryChannel: current.deliveryChannel || "last",
+      name: "Morning brief",
+      taskText: "Summarize overnight updates and priorities.",
+      scheduleKind: "every",
+      everyAmount: 1,
+      everyUnit: "days",
+      everyAtTime: "07:00",
     };
   }
   if (templateId === "reminder") {
     return {
-      ...current,
+      ...base,
       templateId,
-      name: current.name || "Reminder",
-      taskText: current.taskText || "Reminder: follow up on today’s priority task.",
+      name: "Reminder",
+      taskText: "Reminder: follow up on today's priority task.",
       scheduleKind: "at",
+      scheduleAt: "",
     };
   }
   if (templateId === "weekly-review") {
     return {
-      ...current,
+      ...base,
       templateId,
-      name: current.name || "Weekly review",
-      taskText: current.taskText || "Summarize wins, blockers, and next-week priorities.",
-      scheduleKind: "cron",
-      cronExpr: current.cronExpr || "0 9 * * 1",
-      cronTz: current.cronTz || "America/Chicago",
-      deliveryMode: "announce",
-      deliveryChannel: current.deliveryChannel || "last",
+      name: "Weekly review",
+      taskText: "Summarize wins, blockers, and next-week priorities.",
+      scheduleKind: "every",
+      everyAmount: 7,
+      everyUnit: "days",
+      everyAtTime: "09:00",
     };
   }
   if (templateId === "inbox-triage") {
     return {
-      ...current,
+      ...base,
       templateId,
-      name: current.name || "Inbox triage",
-      taskText: current.taskText || "Triage unread updates and surface the top actions.",
+      name: "Inbox triage",
+      taskText: "Triage unread updates and surface the top actions.",
       scheduleKind: "every",
-      everyAmount: current.everyAmount ?? 30,
-      everyUnit: current.everyUnit ?? "minutes",
-      deliveryMode: "announce",
-      deliveryChannel: current.deliveryChannel || "last",
+      everyAmount: 30,
+      everyUnit: "minutes",
     };
   }
   return {
-    ...current,
+    ...base,
     templateId: "custom",
-    scheduleKind: current.scheduleKind ?? "every",
-    everyAmount: current.everyAmount ?? 30,
-    everyUnit: current.everyUnit ?? "minutes",
-    deliveryMode: current.deliveryMode ?? "announce",
-    deliveryChannel: current.deliveryChannel || "last",
+    name: "",
+    taskText: "",
+    scheduleKind: "every",
+    everyAmount: 30,
+    everyUnit: "minutes",
   };
 };
 
@@ -331,10 +343,12 @@ export const AgentSettingsPanel = ({
   const canMoveToScheduleStep = cronDraft.name.trim().length > 0 && cronDraft.taskText.trim().length > 0;
   const canMoveToReviewStep =
     cronDraft.scheduleKind === "every"
-      ? Number.isFinite(cronDraft.everyAmount) && (cronDraft.everyAmount ?? 0) > 0
-      : cronDraft.scheduleKind === "at"
-        ? (cronDraft.scheduleAt ?? "").trim().length > 0
-        : (cronDraft.cronExpr ?? "").trim().length > 0;
+      ? Number.isFinite(cronDraft.everyAmount) &&
+        (cronDraft.everyAmount ?? 0) > 0 &&
+        (cronDraft.everyUnit !== "days" ||
+          ((cronDraft.everyAtTime ?? "").trim().length > 0 &&
+            (cronDraft.everyTimeZone ?? "").trim().length > 0))
+      : (cronDraft.scheduleAt ?? "").trim().length > 0;
   const canSubmitCronCreate = canMoveToScheduleStep && canMoveToReviewStep;
 
   const submitCronCreate = async () => {
@@ -349,9 +363,13 @@ export const AgentSettingsPanel = ({
       scheduleKind: cronDraft.scheduleKind,
       ...(typeof cronDraft.everyAmount === "number" ? { everyAmount: cronDraft.everyAmount } : {}),
       ...(cronDraft.everyUnit ? { everyUnit: cronDraft.everyUnit } : {}),
+      ...(cronDraft.everyUnit === "days" && cronDraft.everyAtTime
+        ? { everyAtTime: cronDraft.everyAtTime }
+        : {}),
+      ...(cronDraft.everyUnit === "days" && cronDraft.everyTimeZone
+        ? { everyTimeZone: cronDraft.everyTimeZone }
+        : {}),
       ...(cronDraft.scheduleAt ? { scheduleAt: cronDraft.scheduleAt } : {}),
-      ...(cronDraft.cronExpr ? { cronExpr: cronDraft.cronExpr } : {}),
-      ...(cronDraft.cronTz ? { cronTz: cronDraft.cronTz } : {}),
       ...(cronDraft.deliveryMode ? { deliveryMode: cronDraft.deliveryMode } : {}),
       ...(cronDraft.deliveryChannel ? { deliveryChannel: cronDraft.deliveryChannel } : {}),
       ...(cronDraft.deliveryTo ? { deliveryTo: cronDraft.deliveryTo } : {}),
@@ -848,7 +866,6 @@ export const AgentSettingsPanel = ({
                     >
                       <option value="every">Every</option>
                       <option value="at">One time</option>
-                      <option value="cron">Advanced cron</option>
                     </select>
                   </label>
                   {cronDraft.scheduleKind === "every" ? (
@@ -888,6 +905,31 @@ export const AgentSettingsPanel = ({
                           <option value="days">Days</option>
                         </select>
                       </label>
+                      {cronDraft.everyUnit === "days" ? (
+                        <>
+                          <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              Time of day
+                            </span>
+                            <input
+                              type="time"
+                              className="h-10 rounded-md border border-border bg-card/75 px-3 text-sm text-foreground outline-none"
+                              value={cronDraft.everyAtTime ?? "09:00"}
+                              onChange={(event) => updateCronDraft({ everyAtTime: event.target.value })}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              Timezone
+                            </span>
+                            <input
+                              className="h-10 rounded-md border border-border bg-card/75 px-3 text-sm text-foreground outline-none"
+                              value={cronDraft.everyTimeZone ?? resolveLocalTimeZone()}
+                              onChange={(event) => updateCronDraft({ everyTimeZone: event.target.value })}
+                            />
+                          </label>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                   {cronDraft.scheduleKind === "at" ? (
@@ -903,30 +945,6 @@ export const AgentSettingsPanel = ({
                       />
                     </label>
                   ) : null}
-                  {cronDraft.scheduleKind === "cron" ? (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          Expression
-                        </span>
-                        <input
-                          className="h-10 rounded-md border border-border bg-card/75 px-3 text-sm text-foreground outline-none"
-                          value={cronDraft.cronExpr ?? ""}
-                          onChange={(event) => updateCronDraft({ cronExpr: event.target.value })}
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          Timezone
-                        </span>
-                        <input
-                          className="h-10 rounded-md border border-border bg-card/75 px-3 text-sm text-foreground outline-none"
-                          value={cronDraft.cronTz ?? ""}
-                          onChange={(event) => updateCronDraft({ cronTz: event.target.value })}
-                        />
-                      </label>
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
               {cronCreateStep === 3 ? (
@@ -940,10 +958,12 @@ export const AgentSettingsPanel = ({
                     <div className="mt-2 text-[11px]">
                       Schedule:{" "}
                       {cronDraft.scheduleKind === "every"
-                        ? `Every ${cronDraft.everyAmount ?? 0} ${cronDraft.everyUnit ?? "minutes"}`
-                        : cronDraft.scheduleKind === "at"
-                          ? `At ${cronDraft.scheduleAt ?? ""}`
-                          : `Cron ${cronDraft.cronExpr ?? ""}${cronDraft.cronTz ? ` (${cronDraft.cronTz})` : ""}`}
+                        ? `Every ${cronDraft.everyAmount ?? 0} ${cronDraft.everyUnit ?? "minutes"}${
+                            cronDraft.everyUnit === "days"
+                              ? ` at ${cronDraft.everyAtTime ?? ""} (${cronDraft.everyTimeZone ?? resolveLocalTimeZone()})`
+                              : ""
+                          }`
+                        : `At ${cronDraft.scheduleAt ?? ""}`}
                     </div>
                   </div>
                 </div>

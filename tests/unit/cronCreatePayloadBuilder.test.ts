@@ -6,23 +6,30 @@ import {
 } from "@/lib/cron/createPayloadBuilder";
 
 describe("cron create payload builder", () => {
-  it("builds_agent_scoped_isolated_payload_from_template_defaults", () => {
+  it("builds_agent_scoped_isolated_every_days_payload_with_anchor", () => {
+    const nowMs = Date.UTC(2026, 1, 11, 6, 30, 0);
     const draft: CronCreateDraft = {
       templateId: "morning-brief",
       name: "Morning brief",
       taskText: "Summarize overnight updates and priorities.",
-      scheduleKind: "cron",
-      cronExpr: "0 7 * * *",
-      cronTz: "America/Chicago",
+      scheduleKind: "every",
+      everyAmount: 1,
+      everyUnit: "days",
+      everyAtTime: "07:00",
+      everyTimeZone: "UTC",
     };
 
-    const input = buildCronJobCreateInput("agent-1", draft);
+    const input = buildCronJobCreateInput("agent-1", draft, nowMs);
 
     expect(input).toEqual({
       name: "Morning brief",
       agentId: "agent-1",
       enabled: true,
-      schedule: { kind: "cron", expr: "0 7 * * *", tz: "America/Chicago" },
+      schedule: {
+        kind: "every",
+        everyMs: 86_400_000,
+        anchorMs: Date.UTC(2026, 1, 11, 7, 0, 0),
+      },
       sessionTarget: "isolated",
       wakeMode: "now",
       payload: {
@@ -84,5 +91,36 @@ describe("cron create payload builder", () => {
     };
 
     expect(() => buildCronJobCreateInput("agent-1", draft)).toThrow("Invalid interval amount.");
+  });
+
+  it("rejects_every_days_without_time", () => {
+    const draft: CronCreateDraft = {
+      templateId: "custom",
+      name: "Daily report",
+      taskText: "Compile report.",
+      scheduleKind: "every",
+      everyAmount: 1,
+      everyUnit: "days",
+      everyTimeZone: "UTC",
+    };
+
+    expect(() => buildCronJobCreateInput("agent-1", draft)).toThrow(
+      "Daily schedule time is required."
+    );
+  });
+
+  it("rejects_invalid_timezone_for_every_days", () => {
+    const draft: CronCreateDraft = {
+      templateId: "custom",
+      name: "Daily report",
+      taskText: "Compile report.",
+      scheduleKind: "every",
+      everyAmount: 1,
+      everyUnit: "days",
+      everyAtTime: "07:00",
+      everyTimeZone: "Mars/OlympusMons",
+    };
+
+    expect(() => buildCronJobCreateInput("agent-1", draft)).toThrow("Invalid timezone.");
   });
 });

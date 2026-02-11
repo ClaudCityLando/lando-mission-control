@@ -370,6 +370,37 @@ describe("AgentSettingsPanel", () => {
     expect(screen.getByRole("dialog", { name: "Create cron job" })).toBeInTheDocument();
   });
 
+  it("updates_template_defaults_when_switching_templates", () => {
+    render(
+      createElement(AgentSettingsPanel, {
+        agent: createAgent(),
+        onClose: vi.fn(),
+        onRename: vi.fn(async () => true),
+        onNewSession: vi.fn(),
+        onDelete: vi.fn(),
+        onToolCallingToggle: vi.fn(),
+        onThinkingTracesToggle: vi.fn(),
+        cronJobs: [],
+        cronLoading: false,
+        cronError: null,
+        cronRunBusyJobId: null,
+        cronDeleteBusyJobId: null,
+        onRunCronJob: vi.fn(),
+        onDeleteCronJob: vi.fn(),
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.click(screen.getByRole("button", { name: "Weekly Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByLabelText("Job name")).toHaveValue("Weekly review");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Morning Brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByLabelText("Job name")).toHaveValue("Morning brief");
+  });
+
   it("submits_modal_with_agent_scoped_draft", async () => {
     const onCreateCronJob = vi.fn(async () => {});
     render(
