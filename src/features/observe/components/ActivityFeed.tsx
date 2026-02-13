@@ -6,6 +6,8 @@ import type { ObserveEntry } from "../state/types";
 import { ActivityFeedEntry } from "./ActivityFeedEntry";
 import { ConversationFeedEntry } from "./ConversationFeedEntry";
 import { buildSessionStyleMap } from "../lib/sessionClassifier";
+import { InfoPopover } from "@/features/mission-control/components/InfoPopover";
+import { infoContent } from "@/features/mission-control/components/info-content";
 
 type ActivityFeedProps = {
   entries: ObserveEntry[];
@@ -111,14 +113,19 @@ export const ActivityFeed = ({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Activity Feed
-          {sessionFilter && (
-            <span className="ml-2 text-primary/70">
-              ({sessionFilter.slice(0, 20)})
-            </span>
-          )}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Activity Feed
+            {sessionFilter && (
+              <span className="ml-2 text-primary/70">
+                ({sessionFilter.slice(0, 20)})
+              </span>
+            )}
+          </h2>
+          <InfoPopover title={infoContent.activityFeed.title}>
+            {infoContent.activityFeed.body}
+          </InfoPopover>
+        </div>
         <span className="font-mono text-[10px] text-muted-foreground/60">
           {filtered.length} events
         </span>

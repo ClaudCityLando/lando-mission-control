@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { ActivityDigest } from "@/lib/activity/tracker-accessor";
+import { InfoPopover } from "./InfoPopover";
+import { infoContent } from "./info-content";
 
 const LAST_SEEN_KEY = "mission-control-last-seen";
 
@@ -82,11 +84,14 @@ export function CatchUpDigestBanner() {
       </button>
 
       <div className="pr-6">
-        <h3 className="text-xs font-semibold tracking-wide text-primary">
+        <h3 className="flex items-center gap-2 text-xs font-semibold tracking-wide text-primary">
           While you were away
-          <span className="ml-2 font-normal text-muted-foreground">
+          <span className="font-normal text-muted-foreground">
             ({digest.duration})
           </span>
+          <InfoPopover title={infoContent.catchUpDigest.title}>
+            {infoContent.catchUpDigest.body}
+          </InfoPopover>
         </h3>
 
         {agentEntries.length > 0 && (

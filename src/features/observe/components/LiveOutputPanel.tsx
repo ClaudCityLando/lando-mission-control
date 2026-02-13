@@ -1,4 +1,6 @@
 import type { SessionStatus } from "../state/types";
+import { InfoPopover } from "@/features/mission-control/components/InfoPopover";
+import { infoContent } from "@/features/mission-control/components/info-content";
 
 type LiveOutputPanelProps = {
   session: SessionStatus;
@@ -14,6 +16,9 @@ export const LiveOutputPanel = ({ session }: LiveOutputPanelProps) => {
         <div className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
           <span className="text-sm font-semibold text-foreground">{name}</span>
+          <InfoPopover title={infoContent.liveOutput.title}>
+            {infoContent.liveOutput.body}
+          </InfoPopover>
           {session.origin !== "unknown" && (
             <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
               {session.origin}

@@ -1,4 +1,6 @@
 import type { DomainMap } from "../state/types";
+import { InfoPopover } from "./InfoPopover";
+import { infoContent } from "./info-content";
 
 type RoutingTablePanelProps = {
   domainMap: DomainMap;
@@ -23,10 +25,13 @@ export const RoutingTablePanel = ({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border/50 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Routing Table
         </h2>
+        <InfoPopover title={infoContent.routingTable.title}>
+          {infoContent.routingTable.body}
+        </InfoPopover>
       </div>
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-[11px]">

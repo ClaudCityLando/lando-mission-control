@@ -1,5 +1,7 @@
 import type { TaskItem } from "../state/types";
 import { TaskCard } from "./TaskCard";
+import { InfoPopover } from "./InfoPopover";
+import { infoContent } from "./info-content";
 
 type TaskBoardPanelProps = {
   tasks: TaskItem[];
@@ -34,10 +36,13 @@ export const TaskBoardPanel = ({ tasks, loading }: TaskBoardPanelProps) => {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border/50 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Task Board
         </h2>
+        <InfoPopover title={infoContent.taskBoard.title}>
+          {infoContent.taskBoard.body}
+        </InfoPopover>
       </div>
 
       <div className="flex flex-1 gap-2 overflow-x-auto p-2">

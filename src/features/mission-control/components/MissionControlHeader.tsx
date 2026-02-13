@@ -2,6 +2,8 @@ import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 import type { SessionStatus } from "@/features/observe/state/types";
 import type { TaskItem, AgentInfo } from "../state/types";
 import type { CronJob } from "@/features/observe/components/CronSchedulePanel";
+import { InfoPopover } from "./InfoPopover";
+import { infoContent } from "./info-content";
 
 type MissionControlHeaderProps = {
   gatewayStatus: GatewayStatus;
@@ -53,6 +55,9 @@ export const MissionControlHeader = ({
         <h1 className="font-display text-xl font-bold uppercase tracking-wider text-foreground">
           Mission Control
         </h1>
+        <InfoPopover title={infoContent.missionControl.title}>
+          {infoContent.missionControl.body}
+        </InfoPopover>
         <div className="text-xs font-semibold">
           {statusBadge(gatewayStatus)}
         </div>

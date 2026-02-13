@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useReducer,
@@ -22,6 +23,7 @@ import {
 import type { SessionStatus } from "@/features/observe/state/types";
 import type { MissionControlContext } from "@/features/mission-control/state/types";
 import type { CronJob } from "@/features/observe/components/CronSchedulePanel";
+import type { SummaryPreviewSnapshot } from "@/features/agents/state/runtimeEventBridge";
 import { MissionControlHeader } from "@/features/mission-control/components/MissionControlHeader";
 import { AgentFleetPanel } from "@/features/mission-control/components/AgentFleetPanel";
 import { TaskBoardPanel } from "@/features/mission-control/components/TaskBoardPanel";
@@ -33,6 +35,24 @@ import { LiveOutputPanel } from "@/features/observe/components/LiveOutputPanel";
 import { chatHistoryToEntries } from "@/features/observe/lib/chatHistoryToEntries";
 import { CatchUpDigestBanner } from "@/features/mission-control/components/CatchUpDigestBanner";
 import { ActivityDetailDrawer } from "@/features/mission-control/components/ActivityDetailDrawer";
+import { SyncBanner } from "@/features/mission-control/components/SyncBanner";
+import {
+  SpecialUpdatesPanel,
+  type HeartbeatSignal,
+} from "@/features/mission-control/components/SpecialUpdatesPanel";
+import {
+  selectPreviewSessionKeys,
+  buildReconcileTerminalEntry,
+  collectRunningRunIds,
+} from "@/features/mission-control/state/sync";
+import { loadMcPrefs, saveMcPrefs } from "@/lib/storage/mcPrefs";
+import {
+  extractText,
+  isHeartbeatPrompt,
+  stripUiMetadata,
+} from "@/lib/text/message-extract";
+import { InfoPopover } from "@/features/mission-control/components/InfoPopover";
+import { infoContent } from "@/features/mission-control/components/info-content";
 import type { Activity } from "@/lib/activity/tracker-accessor";
 
 // Gateway API types
@@ -54,6 +74,32 @@ type ChatHistoryResult = {
   sessionKey: string;
   messages: Record<string, unknown>[];
 };
+
+type ChatHistoryMessage = Record<string, unknown>;
+
+const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]): { text: string; ts: number | null } | null => {
+  let awaitingHeartbeatReply = false;
+  let latestResponse: { text: string; ts: number | null } | null = null;
+  for (const message of messages) {
+    const role = typeof message.role === "string" ? message.role : "";
+    if (role === "user") {
+      const text = stripUiMetadata(extractText(message) ?? "").trim();
+      awaitingHeartbeatReply = isHeartbeatPrompt(text);
+      continue;
+    }
+    if (role === "assistant" && awaitingHeartbeatReply) {
+      const text = stripUiMetadata(extractText(message) ?? "").trim();
+      if (text) {
+        const rawTs = message.timestamp;
+        const ts = typeof rawTs === "number" ? rawTs : typeof rawTs === "string" ? Date.parse(rawTs) || null : null;
+        latestResponse = { text, ts };
+      }
+    }
+  }
+  return latestResponse;
+};
+
+const RECONCILE_INTERVAL_MS = 3_000;
 
 // Convert persisted Activity objects from the REST API into ObserveEntry
 // items so they render in the existing ActivityFeed with conversationMode.
@@ -126,6 +172,17 @@ export default function MissionControlPage() {
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [cronLoading, setCronLoading] = useState(true);
 
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+
+  // Special updates
+  const [heartbeats, setHeartbeats] = useState<HeartbeatSignal[]>([]);
+  const [specialCollapsed, setSpecialCollapsed] = useState(() => loadMcPrefs().specialUpdatesCollapsed ?? false);
+
+  // Reconcile refs
+  const reconcileInFlightRef = useRef<Set<string>>(new Set());
+
   const pendingEntriesRef = useRef<ReturnType<typeof mapEventFrameToEntry>[]>(
     []
   );
@@ -134,6 +191,8 @@ export default function MissionControlPage() {
   // Studio's findAgentBySessionKey approach so we display proper agent names
   // instead of the generic "main" parsed from agent:main:main).
   const sessionAgentMapRef = useRef<Map<string, string>>(new Map());
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
 
   const resolveAgentId = (entry: NonNullable<ReturnType<typeof mapEventFrameToEntry>>): typeof entry => {
     const sessionKey = entry.sessionKey?.trim();
@@ -186,6 +245,148 @@ export default function MissionControlPage() {
       cancelled = true;
       clearInterval(interval);
     };
+  }, []);
+
+  // --- Sync from gateway (sessions + preview snapshot) ---
+  const syncFromGateway = useCallback(async () => {
+    if (status !== "connected") return;
+    setSyncing(true);
+    try {
+      const sessionsResult = await client.call<SessionsListResult>(
+        "sessions.list",
+        { includeGlobal: true, includeUnknown: true, limit: 200 },
+      );
+      const sessions: SessionStatus[] = (sessionsResult.sessions ?? []).map(
+        (s) => ({
+          sessionKey: s.key,
+          agentId: s.agentId ?? parseAgentIdFromSessionKey(s.key),
+          displayName: s.displayName ?? s.agentId ?? null,
+          origin: inferOrigin(s.origin?.label, s.key),
+          status: "idle" as const,
+          lastActivityAt: s.updatedAt ?? null,
+          currentToolName: null,
+          currentToolArgs: null,
+          currentActivity: null,
+          streamingText: null,
+          lastError: null,
+          eventCount: 0,
+        }),
+      );
+      for (const s of sessions) {
+        if (s.agentId) sessionAgentMapRef.current.set(s.sessionKey, s.agentId);
+      }
+      dispatch({ type: "hydrateSessions", sessions });
+
+      const previewKeys = selectPreviewSessionKeys(sessions);
+      if (previewKeys.length > 0) {
+        try {
+          await client.call<SummaryPreviewSnapshot>(
+            "sessions.preview",
+            { keys: previewKeys, limit: 8, maxChars: 240 },
+          );
+          setLastSyncAt(Date.now());
+        } catch (err) {
+          console.warn("[mission-control] preview snapshot failed:", err);
+          setLastSyncAt(Date.now());
+        }
+      } else {
+        setLastSyncAt(Date.now());
+      }
+    } catch (err) {
+      console.warn("[mission-control] sync failed:", err);
+    } finally {
+      setSyncing(false);
+    }
+  }, [client, status]);
+
+  // --- Reconcile running sessions via agent.wait ---
+  const reconcileRunningSessions = useCallback(async () => {
+    if (status !== "connected") return;
+    const currentState = stateRef.current;
+    const running = collectRunningRunIds(currentState.sessions, currentState.runSessionIndex);
+    for (const { runId, sessionKey, agentId } of running) {
+      if (reconcileInFlightRef.current.has(runId)) continue;
+      reconcileInFlightRef.current.add(runId);
+      try {
+        const result = (await client.call("agent.wait", {
+          runId,
+          timeoutMs: 1,
+        })) as { status?: unknown };
+        const resolved = typeof result?.status === "string" ? result.status : "";
+        if (resolved !== "ok" && resolved !== "error") continue;
+        const entry = buildReconcileTerminalEntry(
+          sessionKey,
+          agentId,
+          runId,
+          resolved as "ok" | "error",
+        );
+        dispatch({ type: "pushEntries", entries: [entry] });
+        console.info(`[mission-control] reconciled run ${runId} as ${resolved}`);
+      } catch {
+        // gateway may not support agent.wait or run is still going
+      } finally {
+        reconcileInFlightRef.current.delete(runId);
+      }
+    }
+  }, [client, status]);
+
+  // --- Load heartbeat signals for special updates panel ---
+  const loadHeartbeatSignals = useCallback(async () => {
+    if (status !== "connected") return;
+    const currentSessions = stateRef.current.sessions;
+    const heartbeatSessions = currentSessions.filter((s) => s.origin === "heartbeat");
+    if (heartbeatSessions.length === 0) {
+      setHeartbeats([]);
+      return;
+    }
+
+    const signals: HeartbeatSignal[] = [];
+    for (const session of heartbeatSessions.slice(0, 10)) {
+      try {
+        const history = await client.call<ChatHistoryResult>("chat.history", {
+          sessionKey: session.sessionKey,
+          limit: 20,
+        });
+        const result = findLatestHeartbeatResponse(history.messages ?? []);
+        signals.push({
+          agentId: session.agentId ?? "unknown",
+          sessionKey: session.sessionKey,
+          responseText: result?.text ?? null,
+          respondedAt: result?.ts ?? null,
+        });
+      } catch {
+        // session may not have history
+      }
+    }
+    setHeartbeats(signals);
+  }, [client, status]);
+
+  // --- Gap recovery ---
+  useEffect(() => {
+    const unsubscribe = client.onGap((info) => {
+      console.warn(`[mission-control] Gateway event gap: expected ${info.expected}, received ${info.received}`);
+      void syncFromGateway();
+      void reconcileRunningSessions();
+    });
+    return unsubscribe;
+  }, [client, syncFromGateway, reconcileRunningSessions]);
+
+  // --- Reconcile poll loop (every 3s) ---
+  useEffect(() => {
+    if (status !== "connected") return;
+    const timer = window.setInterval(() => {
+      void reconcileRunningSessions();
+    }, RECONCILE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [reconcileRunningSessions, status]);
+
+  // --- Persist special updates panel collapsed state ---
+  const handleToggleSpecialCollapsed = useCallback(() => {
+    setSpecialCollapsed((prev) => {
+      const next = !prev;
+      saveMcPrefs({ specialUpdatesCollapsed: next });
+      return next;
+    });
   }, []);
 
   // Subscribe to ALL gateway events with RAF batching
@@ -291,11 +492,15 @@ export default function MissionControlPage() {
       }
     };
 
-    void loadAll();
+    void loadAll().then(() => {
+      if (cancelled) return;
+      void syncFromGateway();
+      void loadHeartbeatSignals();
+    });
     return () => {
       cancelled = true;
     };
-  }, [client, status]);
+  }, [client, status, syncFromGateway, loadHeartbeatSignals]);
 
   // Refresh cron jobs periodically (every 30s)
   useEffect(() => {
@@ -347,6 +552,7 @@ export default function MissionControlPage() {
             if (s.agentId) sessionAgentMapRef.current.set(s.sessionKey, s.agentId);
           }
           dispatch({ type: "hydrateSessions", sessions });
+          void loadHeartbeatSignals();
         } catch {
           // ignore
         }
@@ -359,7 +565,7 @@ export default function MissionControlPage() {
         refreshTimerRef.current = null;
       }
     };
-  }, [client, status]);
+  }, [client, status, loadHeartbeatSignals]);
 
   // Find active session for live output
   const activeSession = useMemo(() => {
@@ -384,17 +590,33 @@ export default function MissionControlPage() {
         cronJobs={cronJobs}
       />
 
-      <CatchUpDigestBanner />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <CatchUpDigestBanner />
+        </div>
+        <SyncBanner syncing={syncing} lastSyncAt={lastSyncAt} />
+      </div>
+
+      <SpecialUpdatesPanel
+        heartbeats={heartbeats}
+        cronJobs={cronJobs}
+        collapsed={specialCollapsed}
+        onToggleCollapse={handleToggleSpecialCollapsed}
+      />
+
       <InterventionAlerts entries={state.entries} />
 
       <div className="flex min-h-0 flex-1 gap-2">
         {/* Left panel: Agent Fleet */}
         <div className="hidden w-[280px] shrink-0 flex-col gap-2 lg:flex">
           <div className="glass-panel flex flex-1 flex-col overflow-hidden rounded-xl">
-            <div className="border-b border-border/50 px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Agent Fleet
               </h2>
+              <InfoPopover title={infoContent.agentFleet.title}>
+                {infoContent.agentFleet.body}
+              </InfoPopover>
             </div>
             <div className="flex-1 overflow-y-auto">
               <AgentFleetPanel
