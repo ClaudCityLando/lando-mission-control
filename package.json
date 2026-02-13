@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node server/index.js --dev",
+    "dev:tailnet": "./scripts/dev-serve.sh",
     "dev:turbo": "node server/index.js --dev",
     "build": "next build",
     "start": "node server/index.js",

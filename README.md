@@ -72,6 +72,12 @@ cd openclaw-studio
 npm run dev
 ```
 
+To access Studio from another device on your tailnet, run:
+```bash
+npm run dev:tailnet
+```
+This uses `tailscale serve` and prints a URL like `https://<host>.ts.net:3000`.
+
 Open http://localhost:3000 and set:
 - Token: `openclaw config get gateway.auth.token`
 - Gateway URL: `wss://gateway-host.your-tailnet.ts.net` (tailnet via `tailscale serve`)
