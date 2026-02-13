@@ -456,7 +456,7 @@ export const useGatewayConnection = (
         token,
         authScopeKey: gatewayUrl,
         clientName: "openclaw-control-ui",
-        disableDeviceAuth: true,
+        disableDeviceAuth: false,
       });
       await ensureGatewayReloadModeHotForLocalStudio({
         client,

@@ -118,6 +118,8 @@ function createGatewayProxy(options) {
           return;
         }
         connectRequestId = id;
+        const browserProvidedAuth =
+          hasNonEmptyToken(parsed.params) || hasDeviceSignature(parsed.params);
 
         let upstreamUrl = "";
         let upstreamToken = "";
@@ -138,7 +140,7 @@ function createGatewayProxy(options) {
           );
           return;
         }
-        if (!upstreamToken) {
+        if (!upstreamToken && !browserProvidedAuth) {
           sendConnectError(
             "studio.gateway_token_missing",
             "Upstream gateway token is not configured on the Studio host."

@@ -15,10 +15,16 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
   vi.resetModules();
   vi.spyOn(console, "info").mockImplementation(() => {});
 
-  const captured: { url: string | null; token: unknown; authScopeKey: unknown } = {
+  const captured: {
+    url: string | null;
+    token: unknown;
+    authScopeKey: unknown;
+    disableDeviceAuth: unknown;
+  } = {
     url: null,
     token: null,
     authScopeKey: null,
+    disableDeviceAuth: null,
   };
 
   vi.doMock("../../src/lib/gateway/openclaw/GatewayBrowserClient", () => {
@@ -35,6 +41,8 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
         captured.url = typeof opts.url === "string" ? opts.url : null;
         captured.token = "token" in opts ? opts.token : null;
         captured.authScopeKey = "authScopeKey" in opts ? opts.authScopeKey : null;
+        captured.disableDeviceAuth =
+          "disableDeviceAuth" in opts ? opts.disableDeviceAuth : null;
         this.opts = {
           onHello: typeof opts.onHello === "function" ? (opts.onHello as (hello: unknown) => void) : undefined,
           onEvent: typeof opts.onEvent === "function" ? (opts.onEvent as (event: unknown) => void) : undefined,
@@ -152,6 +160,7 @@ describe("useGatewayConnection", () => {
     });
     expect(captured.token).toBe("");
     expect(captured.authScopeKey).toBe("ws://localhost:18789");
+    expect(captured.disableDeviceAuth).toBe(false);
   });
 
   it("applies_local_defaults_from_settings_envelope", async () => {
