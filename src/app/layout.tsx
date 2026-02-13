@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Bebas_Neue, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { parseTheme, THEME_COOKIE_NAME } from "@/lib/theme/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,21 +27,17 @@ const mono = IBM_Plex_Mono({
   subsets: ["latin"],
 });
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const theme = parseTheme(cookieStore.get(THEME_COOKIE_NAME)?.value);
+
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{var t=localStorage.getItem('theme');var m=window.matchMedia('(prefers-color-scheme: dark)').matches;var d=t?t==='dark':m;document.documentElement.classList.toggle('dark',d);}catch(e){}})();",
-          }}
-        />
-      </head>
+    <html lang="en" suppressHydrationWarning className={theme === "dark" ? "dark" : undefined}>
+      <head />
       <body className={`${display.variable} ${sans.variable} ${mono.variable} antialiased`}>
         {children}
       </body>
