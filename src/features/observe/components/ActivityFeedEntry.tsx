@@ -1,11 +1,34 @@
 import type { ObserveEntry } from "../state/types";
 
+const SHORT_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+const TZ_SHORT =
+  Intl.DateTimeFormat().resolvedOptions().timeZone
+    .replace(/^.*\//, "")
+    .replace(/_/g, " ") ||
+  new Date()
+    .toLocaleTimeString("en-US", { timeZoneName: "short" })
+    .split(" ")
+    .pop() ||
+  "";
+
 const formatTime = (ts: number): string => {
   const d = new Date(ts);
-  const h = String(d.getHours()).padStart(2, "0");
+  let h = d.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
   const m = String(d.getMinutes()).padStart(2, "0");
   const s = String(d.getSeconds()).padStart(2, "0");
-  return `${h}:${m}:${s}`;
+  const now = new Date();
+  const isToday =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (isToday) return `${h}:${m}:${s} ${ampm} ${TZ_SHORT}`;
+  return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()} ${h}:${m}:${s} ${ampm} ${TZ_SHORT}`;
 };
 
 const severityClass: Record<ObserveEntry["severity"], string> = {

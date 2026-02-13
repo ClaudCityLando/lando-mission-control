@@ -1,11 +1,17 @@
 import type { EventFrame } from "@/lib/gateway/GatewayClient";
 import { parseAgentIdFromSessionKey } from "@/lib/gateway/GatewayClient";
 import { classifyGatewayEventKind } from "@/features/agents/state/runtimeEventBridge";
+import {
+  extractTextDeep,
+  parseEnvelope,
+  isUiMetadataPrefix,
+  stripUiMetadata,
+} from "@/lib/text/message-extract";
 import type {
   ChatEventPayload,
   AgentEventPayload,
 } from "@/features/agents/state/runtimeEventBridge";
-import type { ObserveEntry } from "./types";
+import type { ObserveEntry, ObserveAttributionSource } from "./types";
 
 let entryCounter = 0;
 
@@ -25,19 +31,24 @@ const truncate = (
   return trimmed.slice(0, maxLen) + "...";
 };
 
-const extractTextFromMessage = (message: unknown): string | null => {
-  if (!message || typeof message !== "object") return null;
-  const record = message as Record<string, unknown>;
-  if (typeof record.content === "string") return record.content;
-  if (typeof record.text === "string") return record.text;
-  if (Array.isArray(record.content)) {
-    for (const block of record.content) {
-      if (block && typeof block === "object" && typeof (block as Record<string, unknown>).text === "string") {
-        return (block as Record<string, unknown>).text as string;
-      }
-    }
-  }
-  return null;
+const extractPayloadAgentId = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.agentId !== "string") return null;
+  const trimmed = record.agentId.trim();
+  return trimmed || null;
+};
+
+/** Sentinel values openclaw uses as placeholders in chat events */
+const CHAT_SENTINELS = new Set(["NO_", "NO", "NO_REPLY"]);
+
+const extractCleanMessageText = (message: unknown): string | null => {
+  const raw = extractTextDeep(message);
+  if (typeof raw !== "string") return null;
+  const cleaned = stripUiMetadata(raw).trim();
+  if (!cleaned) return null;
+  if (CHAT_SENTINELS.has(cleaned)) return null;
+  return cleaned;
 };
 
 const extractToolArgs = (data: Record<string, unknown>): string | null => {
@@ -124,31 +135,67 @@ const mapChatEvent = (
   payload: ChatEventPayload,
   timestamp: number
 ): ObserveEntry | null => {
+  const payloadAgentId = extractPayloadAgentId(payload);
   const agentId = payload.sessionKey
     ? parseAgentIdFromSessionKey(payload.sessionKey)
-    : null;
+    : payloadAgentId;
 
   const isError = payload.state === "error" || payload.state === "aborted";
-  const messageText = extractTextFromMessage(payload.message);
+  const messageText =
+    extractCleanMessageText(payload.message) ??
+    extractCleanMessageText(payload);
   const role =
     payload.message &&
     typeof payload.message === "object" &&
     typeof (payload.message as Record<string, unknown>).role === "string"
       ? ((payload.message as Record<string, unknown>).role as string)
       : null;
+  const normalizedRole = role?.trim().toLowerCase() ?? null;
+  const normalizedError = payload.errorMessage?.trim() ?? "";
+  const hasUiPrefix = messageText ? isUiMetadataPrefix(messageText) : false;
 
-  // Skip delta events for chat — too noisy, we get assistant stream from agent events
-  if (payload.state === "delta") return null;
+  // Parse channel from envelope header (user messages only).
+  // We read the raw content directly because extractText strips the envelope.
+  const rawMessageContent =
+    payload.message && typeof payload.message === "object"
+      ? (payload.message as Record<string, unknown>).content
+      : null;
+  const rawContentStr =
+    typeof rawMessageContent === "string" ? rawMessageContent : null;
+  const envelope =
+    rawContentStr && normalizedRole === "user"
+      ? parseEnvelope(rawContentStr)
+      : null;
+  const channel = envelope?.channel ?? null;
+
+  // Diagnostic: log when extraction produces very short results
+  if (
+    payload.state === "final" &&
+    (!messageText || messageText.length < 5) &&
+    payload.message
+  ) {
+    console.debug(
+      "[observe] short extraction for chat final — raw payload.message:",
+      JSON.stringify(payload.message).slice(0, 500)
+    );
+  }
 
   let description: string;
-  if (isError) {
-    description = payload.errorMessage ?? "Session error";
+  if (payload.state === "delta") {
+    if (normalizedRole !== "assistant") return null;
+    if (!messageText || hasUiPrefix) return null;
+    description =
+      messageText
+        ? `Writing: ${truncate(messageText, 100)}`
+        : "Writing response...";
+  } else if (isError) {
+    description = normalizedError || "Session error";
   } else if (payload.state === "final") {
-    if (role === "assistant") {
+    if (normalizedRole === "assistant") {
       description = messageText
         ? `Response: ${truncate(messageText, 120)}`
         : "Response complete";
-    } else if (role === "user") {
+    } else if (normalizedRole === "user") {
       description = messageText
         ? `Prompt: ${truncate(messageText, 120)}`
         : "User message received";
@@ -171,10 +218,16 @@ const mapChatEvent = (
     toolPhase: null,
     toolArgs: null,
     chatState: payload.state ?? null,
-    errorMessage: isError ? (payload.errorMessage ?? "Chat error") : null,
+    errorMessage: isError ? (normalizedError || "Chat error") : null,
     text: truncate(messageText),
+    fullText: messageText ?? null,
     description,
     severity: isError ? "error" : "info",
+    attributionSource: payload.sessionKey ? "sessionKey" : undefined,
+    rawStream: "chat",
+    isDeltaLike: payload.state === "delta",
+    channel,
+    messageRole: (normalizedRole as ObserveEntry["messageRole"]) ?? null,
   };
 };
 
@@ -183,9 +236,10 @@ const mapAgentEvent = (
   timestamp: number
 ): ObserveEntry | null => {
   const sessionKey = payload.sessionKey ?? null;
+  const payloadAgentId = extractPayloadAgentId(payload);
   const agentId = sessionKey
     ? parseAgentIdFromSessionKey(sessionKey)
-    : null;
+    : payloadAgentId;
   const stream = payload.stream ?? null;
   const data = payload.data ?? {};
 
@@ -195,6 +249,9 @@ const mapAgentEvent = (
   let text: string | null = null;
   let errorMessage: string | null = null;
   let severity: ObserveEntry["severity"] = "info";
+  const attributionSource: ObserveAttributionSource | undefined =
+    sessionKey ? "sessionKey" : undefined;
+  let isDeltaLike = false;
   let description: string;
 
   if (stream === "lifecycle") {
@@ -242,19 +299,37 @@ const mapAgentEvent = (
       description = describeToolCall(toolName ?? "tool", toolArgs);
     }
   } else if (stream === "assistant") {
-    const raw = typeof data.text === "string" ? data.text : null;
-    const delta = typeof data.delta === "string" ? data.delta : null;
+    const raw =
+      typeof data.text === "string"
+        ? stripUiMetadata(data.text).trim()
+        : null;
+    const delta =
+      typeof data.delta === "string"
+        ? stripUiMetadata(data.delta).trim()
+        : null;
     // Only emit entries for meaningful text updates, not every delta
     if (!raw && !delta) return null;
+    isDeltaLike = Boolean(delta);
     text = truncate(raw ?? delta);
     description = text ? `Writing: ${truncate(text, 100)}` : "Thinking...";
   } else {
-    // reasoning / thinking streams
+    // reasoning / other streams; keep phase-only markers to avoid dropping useful state.
     const raw = typeof data.text === "string" ? data.text : null;
     const delta = typeof data.delta === "string" ? data.delta : null;
-    if (!raw && !delta) return null;
-    text = truncate(raw ?? delta);
-    description = "Thinking...";
+    const phase = typeof data.phase === "string" ? data.phase : null;
+    const status = typeof data.status === "string" ? data.status : null;
+    if (!raw && !delta && !phase && !status) return null;
+    isDeltaLike = Boolean(delta);
+    if (typeof data.error === "string") {
+      severity = "error";
+      errorMessage = data.error;
+    }
+    text = truncate(raw ?? delta ?? phase ?? status);
+    if (phase || status) {
+      description = `${stream ?? "activity"}: ${truncate(phase ?? status, 80)}`;
+    } else {
+      description = "Thinking...";
+    }
   }
 
   return {
@@ -273,6 +348,9 @@ const mapAgentEvent = (
     text,
     description,
     severity,
+    attributionSource,
+    rawStream: stream,
+    isDeltaLike,
   };
 };
 

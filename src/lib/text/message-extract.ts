@@ -48,7 +48,7 @@ type ToolResultRecord = {
   text?: string | null;
 };
 
-const looksLikeEnvelopeHeader = (header: string): boolean => {
+export const looksLikeEnvelopeHeader = (header: string): boolean => {
   if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z\b/.test(header)) return true;
   if (/\d{4}-\d{2}-\d{2} \d{2}:\d{2}\b/.test(header)) return true;
   return ENVELOPE_CHANNELS.some((label) => header.startsWith(`${label} `));
@@ -60,6 +60,30 @@ const stripEnvelope = (text: string): string => {
   const header = match[1] ?? "";
   if (!looksLikeEnvelopeHeader(header)) return text;
   return text.slice(match[0].length);
+};
+
+export type EnvelopeInfo = {
+  channel: string | null;
+  metadata: string | null;
+  body: string;
+};
+
+export const parseEnvelope = (text: string): EnvelopeInfo => {
+  const match = text.match(ENVELOPE_PREFIX);
+  if (!match) return { channel: null, metadata: null, body: text };
+
+  const header = match[1] ?? "";
+  if (!looksLikeEnvelopeHeader(header)) {
+    return { channel: null, metadata: null, body: text };
+  }
+
+  const body = text.slice(match[0].length);
+  const channel =
+    ENVELOPE_CHANNELS.find(
+      (label) => header.startsWith(`${label} `) || header === label
+    ) ?? null;
+
+  return { channel, metadata: header, body };
 };
 
 const stripThinkingTagsFromAssistantText = (value: string): string => {
@@ -155,6 +179,44 @@ export const extractTextCached = (message: unknown): string | null => {
   const value = extractText(message);
   textCache.set(obj, value);
   return value;
+};
+
+export const extractTextDeep = (messageOrPayload: unknown): string | null => {
+  const standard = extractText(messageOrPayload);
+  if (standard && standard.trim().length > 2) return standard;
+
+  if (!messageOrPayload || typeof messageOrPayload !== "object") return standard;
+  const record = messageOrPayload as Record<string, unknown>;
+
+  // Fallback: check nested data.content / data.text
+  const data = record.data;
+  if (data && typeof data === "object") {
+    const fromData = extractText(data);
+    if (fromData && fromData.trim().length > 0) return fromData;
+  }
+
+  // Check content as object with nested text (not array)
+  const content = record.content;
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    const contentRecord = content as Record<string, unknown>;
+    if (typeof contentRecord.text === "string" && contentRecord.text.trim()) {
+      return contentRecord.text;
+    }
+    if (
+      typeof contentRecord.content === "string" &&
+      contentRecord.content.trim()
+    ) {
+      return contentRecord.content;
+    }
+  }
+
+  // Check alternative top-level fields
+  for (const key of ["response", "output", "body", "answer"] as const) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+
+  return standard;
 };
 
 export const extractThinking = (message: unknown): string | null => {

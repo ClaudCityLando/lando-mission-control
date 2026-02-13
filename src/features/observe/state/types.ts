@@ -1,3 +1,9 @@
+export type ObserveAttributionSource =
+  | "sessionKey"
+  | "runIndex"
+  | "agentRunningSession"
+  | "syntheticRun";
+
 export type ObserveEntry = {
   id: string;
   timestamp: number;
@@ -14,6 +20,15 @@ export type ObserveEntry = {
   text: string | null;
   description: string;
   severity: "info" | "warn" | "error";
+  attributionSource?: ObserveAttributionSource;
+  rawStream?: string | null;
+  isDeltaLike?: boolean;
+  /** Source channel parsed from envelope header (Telegram, Discord, etc.) */
+  channel?: string | null;
+  /** Normalized message role (user, assistant, system, tool) */
+  messageRole?: "user" | "assistant" | "system" | "tool" | null;
+  /** Untruncated message text for expand/collapse */
+  fullText?: string | null;
 };
 
 export type SessionOrigin = "interactive" | "cron" | "heartbeat" | "unknown";
@@ -36,6 +51,7 @@ export type SessionStatus = {
 export type ObserveState = {
   entries: ObserveEntry[];
   sessions: SessionStatus[];
+  runSessionIndex: Record<string, string>;
   interventionCount: number;
   paused: boolean;
 };

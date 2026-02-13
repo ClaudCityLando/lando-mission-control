@@ -1,22 +1,42 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isNearBottom } from "@/lib/dom";
 import type { ObserveEntry } from "../state/types";
 import { ActivityFeedEntry } from "./ActivityFeedEntry";
+import { ConversationFeedEntry } from "./ConversationFeedEntry";
+import { buildSessionStyleMap } from "../lib/sessionClassifier";
 
 type ActivityFeedProps = {
   entries: ObserveEntry[];
   sessionFilter: string | null;
+  /** Enable conversation-style rendering for chat sessions */
+  conversationMode?: boolean;
 };
 
-export const ActivityFeed = ({ entries, sessionFilter }: ActivityFeedProps) => {
+export const ActivityFeed = ({
+  entries,
+  sessionFilter,
+  conversationMode = false,
+}: ActivityFeedProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
-  const filtered = sessionFilter
-    ? entries.filter((e) => e.sessionKey === sessionFilter)
-    : entries;
+  const filtered = useMemo(() => {
+    const base = sessionFilter
+      ? entries.filter((e) => e.sessionKey === sessionFilter)
+      : entries;
+    if (!conversationMode) return base;
+    // Sort by timestamp so history from multiple sessions interleaves correctly
+    return [...base].sort((a, b) => a.timestamp - b.timestamp);
+  }, [entries, sessionFilter, conversationMode]);
+
+  // Build style map only when conversation mode is active
+  const styleMap = useMemo(() => {
+    if (!conversationMode) return null;
+    return buildSessionStyleMap(filtered);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationMode, filtered.length]);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -33,6 +53,25 @@ export const ActivityFeed = ({ entries, sessionFilter }: ActivityFeedProps) => {
     if (!el || !shouldAutoScroll.current) return;
     el.scrollTop = el.scrollHeight;
   }, [filtered.length]);
+
+  const renderEntry = (entry: ObserveEntry) => {
+    if (!conversationMode) {
+      return <ActivityFeedEntry key={entry.id} entry={entry} />;
+    }
+
+    const sessionStyle = entry.sessionKey
+      ? styleMap?.get(entry.sessionKey)
+      : "agentic";
+
+    if (sessionStyle === "conversation") {
+      // Skip lifecycle and delta events in conversation mode
+      if (entry.stream === "lifecycle") return null;
+      if (entry.isDeltaLike || entry.chatState === "delta") return null;
+      return <ConversationFeedEntry key={entry.id} entry={entry} />;
+    }
+
+    return <ActivityFeedEntry key={entry.id} entry={entry} />;
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -59,9 +98,7 @@ export const ActivityFeed = ({ entries, sessionFilter }: ActivityFeedProps) => {
             Waiting for events...
           </div>
         ) : (
-          filtered.map((entry) => (
-            <ActivityFeedEntry key={entry.id} entry={entry} />
-          ))
+          filtered.map(renderEntry)
         )}
       </div>
     </div>
