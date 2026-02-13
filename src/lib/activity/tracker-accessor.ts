@@ -17,6 +17,7 @@ export type EventRef = {
 
 export type Activity = {
   id: string;
+  runId: string | null;
   agentId: string | null;
   sessionKey: string | null;
   channel: string | null;

@@ -4,6 +4,8 @@ export type ObserveAttributionSource =
   | "agentRunningSession"
   | "syntheticRun";
 
+export type ObserveEntrySource = "live" | "persisted";
+
 export type ObserveEntry = {
   id: string;
   timestamp: number;
@@ -29,6 +31,10 @@ export type ObserveEntry = {
   messageRole?: "user" | "assistant" | "system" | "tool" | null;
   /** Untruncated message text for expand/collapse */
   fullText?: string | null;
+  /** Where this entry originated from: live WS events or persisted activity tracker */
+  source?: ObserveEntrySource;
+  /** Activity ID for persisted entries (enables drill-down) */
+  activityId?: string | null;
 };
 
 export type SessionOrigin = "interactive" | "cron" | "heartbeat" | "unknown";

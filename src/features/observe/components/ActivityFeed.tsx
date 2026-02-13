@@ -12,12 +12,15 @@ type ActivityFeedProps = {
   sessionFilter: string | null;
   /** Enable conversation-style rendering for chat sessions */
   conversationMode?: boolean;
+  /** Callback when a persisted activity entry is clicked (for drill-down) */
+  onActivityClick?: (activityId: string) => void;
 };
 
 export const ActivityFeed = ({
   entries,
   sessionFilter,
   conversationMode = false,
+  onActivityClick,
 }: ActivityFeedProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -54,9 +57,25 @@ export const ActivityFeed = ({
     el.scrollTop = el.scrollHeight;
   }, [filtered.length]);
 
+  const handleEntryClick = (entry: ObserveEntry) => {
+    if (entry.activityId && onActivityClick) {
+      onActivityClick(entry.activityId);
+    }
+  };
+
   const renderEntry = (entry: ObserveEntry) => {
+    const isClickable = Boolean(entry.activityId && onActivityClick);
+
     if (!conversationMode) {
-      return <ActivityFeedEntry key={entry.id} entry={entry} />;
+      return (
+        <div
+          key={entry.id}
+          onClick={isClickable ? () => handleEntryClick(entry) : undefined}
+          className={isClickable ? "cursor-pointer hover:bg-muted/20" : ""}
+        >
+          <ActivityFeedEntry entry={entry} />
+        </div>
+      );
     }
 
     const sessionStyle = entry.sessionKey
@@ -67,10 +86,26 @@ export const ActivityFeed = ({
       // Skip lifecycle and delta events in conversation mode
       if (entry.stream === "lifecycle") return null;
       if (entry.isDeltaLike || entry.chatState === "delta") return null;
-      return <ConversationFeedEntry key={entry.id} entry={entry} />;
+      return (
+        <div
+          key={entry.id}
+          onClick={isClickable ? () => handleEntryClick(entry) : undefined}
+          className={isClickable ? "cursor-pointer hover:bg-muted/20" : ""}
+        >
+          <ConversationFeedEntry entry={entry} />
+        </div>
+      );
     }
 
-    return <ActivityFeedEntry key={entry.id} entry={entry} />;
+    return (
+      <div
+        key={entry.id}
+        onClick={isClickable ? () => handleEntryClick(entry) : undefined}
+        className={isClickable ? "cursor-pointer hover:bg-muted/20" : ""}
+      >
+        <ActivityFeedEntry entry={entry} />
+      </div>
+    );
   };
 
   return (

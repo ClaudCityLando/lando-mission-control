@@ -136,9 +136,12 @@ const mapChatEvent = (
   timestamp: number
 ): ObserveEntry | null => {
   const payloadAgentId = extractPayloadAgentId(payload);
-  const agentId = payload.sessionKey
+  const parsedAgentId = payload.sessionKey
     ? parseAgentIdFromSessionKey(payload.sessionKey)
-    : payloadAgentId;
+    : null;
+  const agentId = parsedAgentId ?? payloadAgentId;
+
+  console.info("[observe] chat event — sessionKey:", payload.sessionKey, "→ agentId:", agentId);
 
   const isError = payload.state === "error" || payload.state === "aborted";
   const messageText =
@@ -241,6 +244,8 @@ const mapAgentEvent = (
     ? parseAgentIdFromSessionKey(sessionKey)
     : payloadAgentId;
   const stream = payload.stream ?? null;
+
+  console.info("[observe] agent event — sessionKey:", sessionKey, "→ agentId:", agentId, "stream:", stream);
   const data = payload.data ?? {};
 
   let toolName: string | null = null;

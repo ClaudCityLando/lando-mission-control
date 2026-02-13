@@ -32,6 +32,7 @@ import { ActivityFeed } from "@/features/observe/components/ActivityFeed";
 import { LiveOutputPanel } from "@/features/observe/components/LiveOutputPanel";
 import { chatHistoryToEntries } from "@/features/observe/lib/chatHistoryToEntries";
 import { CatchUpDigestBanner } from "@/features/mission-control/components/CatchUpDigestBanner";
+import { ActivityDetailDrawer } from "@/features/mission-control/components/ActivityDetailDrawer";
 import type { Activity } from "@/lib/activity/tracker-accessor";
 
 // Gateway API types
@@ -56,10 +57,9 @@ type ChatHistoryResult = {
 
 // Convert persisted Activity objects from the REST API into ObserveEntry
 // items so they render in the existing ActivityFeed with conversationMode.
-let activityIdCounter = 0;
+// Uses stable IDs based on activity.id for proper deduplication.
 const activityToEntries = (activities: Activity[]): import("@/features/observe/state/types").ObserveEntry[] => {
   return activities.map((a) => {
-    activityIdCounter += 1;
     const agentId = a.agentId ?? null;
     const sessionKey = a.sessionKey ?? null;
     const isConversation = a.type === "conversation-turn";
@@ -67,12 +67,12 @@ const activityToEntries = (activities: Activity[]): import("@/features/observe/s
     const isError = a.status === "errored";
 
     return {
-      id: `act-${activityIdCounter}`,
+      id: `activity:${a.id}`,
       timestamp: new Date(a.startedAt).getTime(),
       eventType: isConversation ? ("chat" as const) : ("agent" as const),
       sessionKey,
       agentId,
-      runId: null,
+      runId: a.runId ?? null,
       stream: isCron ? "lifecycle" : null,
       toolName: null,
       toolPhase: null,
@@ -85,6 +85,8 @@ const activityToEntries = (activities: Activity[]): import("@/features/observe/s
       channel: a.channel ?? null,
       messageRole: isConversation ? ("assistant" as const) : null,
       fullText: a.summary ?? null,
+      source: "persisted" as const,
+      activityId: a.id,
     };
   });
 };
@@ -127,6 +129,21 @@ export default function MissionControlPage() {
   const pendingEntriesRef = useRef<ReturnType<typeof mapEventFrameToEntry>[]>(
     []
   );
+
+  // Maps sessionKey → real agentId from gateway sessions.list (mirrors
+  // Studio's findAgentBySessionKey approach so we display proper agent names
+  // instead of the generic "main" parsed from agent:main:main).
+  const sessionAgentMapRef = useRef<Map<string, string>>(new Map());
+
+  const resolveAgentId = (entry: NonNullable<ReturnType<typeof mapEventFrameToEntry>>): typeof entry => {
+    const sessionKey = entry.sessionKey?.trim();
+    if (!sessionKey) return entry;
+    const realAgentId = sessionAgentMapRef.current.get(sessionKey);
+    if (realAgentId && realAgentId !== entry.agentId) {
+      return { ...entry, agentId: realAgentId };
+    }
+    return entry;
+  };
 
   // Load persisted activity history from Activity Tracker REST API
   useEffect(() => {
@@ -177,9 +194,9 @@ export default function MissionControlPage() {
       const pending = pendingEntriesRef.current;
       if (pending.length === 0) return;
       pendingEntriesRef.current = [];
-      const valid = pending.filter(
-        (e): e is NonNullable<typeof e> => e !== null
-      );
+      const valid = pending
+        .filter((e): e is NonNullable<typeof e> => e !== null)
+        .map(resolveAgentId);
       if (valid.length > 0) {
         dispatch({ type: "pushEntries", entries: valid });
       }
@@ -228,6 +245,10 @@ export default function MissionControlPage() {
             eventCount: 0,
           })
         );
+        // Populate session→agentId map for live event resolution
+        for (const s of sessions) {
+          if (s.agentId) sessionAgentMapRef.current.set(s.sessionKey, s.agentId);
+        }
         dispatch({ type: "hydrateSessions", sessions });
         sessionKeys = sessions.map((s) => s.sessionKey);
       } catch (err) {
@@ -322,6 +343,9 @@ export default function MissionControlPage() {
               eventCount: 0,
             })
           );
+          for (const s of sessions) {
+            if (s.agentId) sessionAgentMapRef.current.set(s.sessionKey, s.agentId);
+          }
           dispatch({ type: "hydrateSessions", sessions });
         } catch {
           // ignore
@@ -346,6 +370,9 @@ export default function MissionControlPage() {
   const tasks = mcContext?.tasks ?? [];
   const domainMap = mcContext?.domainMap ?? {};
   const hasActivity = state.entries.length > 0;
+
+  // Drawer state for activity drill-down
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
 
   return (
     <main className="mx-auto flex h-screen w-full max-w-[1900px] flex-col gap-2 p-2">
@@ -393,7 +420,12 @@ export default function MissionControlPage() {
           {/* Activity Feed - bottom */}
           <div className="glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
             {hasActivity ? (
-              <ActivityFeed entries={state.entries} sessionFilter={null} conversationMode />
+              <ActivityFeed
+                entries={state.entries}
+                sessionFilter={null}
+                conversationMode
+                onActivityClick={setSelectedActivityId}
+              />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center text-sm text-muted-foreground/50">
                 <div className="mb-1 text-lg">Waiting for activity...</div>
@@ -415,6 +447,12 @@ export default function MissionControlPage() {
           </div>
         </div>
       </div>
+
+      {/* Activity detail drawer for drill-down */}
+      <ActivityDetailDrawer
+        activityId={selectedActivityId}
+        onClose={() => setSelectedActivityId(null)}
+      />
     </main>
   );
 }

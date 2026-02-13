@@ -334,6 +334,42 @@ describe("createActivityTracker", () => {
     });
   });
 
+  describe("runId persistence", () => {
+    it("stores runId on finalized activity", () => {
+      const runId = "unique-run-id-12345";
+      tracker.processEvent(
+        makeChatEvent(runId, "agent:w1le:main", "final", "user", "Hi"),
+      );
+      tracker.processEvent(
+        makeChatEvent(runId, "agent:w1le:main", "final", "assistant", "Hello"),
+      );
+
+      const activities = tracker.queryActivities();
+      expect(activities).toHaveLength(1);
+      expect(activities[0].runId).toBe(runId);
+    });
+
+    it("persists runId to disk and reloads correctly", () => {
+      const runId = "persist-run-id-xyz";
+      tracker.processEvent(
+        makeChatEvent(runId, "agent:w1le:main", "final", "user", "Hi"),
+      );
+      tracker.processEvent(
+        makeChatEvent(runId, "agent:w1le:main", "final", "assistant", "Hello"),
+      );
+
+      tracker.stop();
+
+      const tracker2 = createActivityTracker({ stateDir: tmpDir, log: () => {} });
+      tracker2.start();
+
+      const activities = tracker2.queryActivities();
+      expect(activities[0].runId).toBe(runId);
+
+      tracker2.stop();
+    });
+  });
+
   describe("tool-sequence detection", () => {
     it("reclassifies to tool-sequence when tools present without messages", () => {
       tracker.processEvent(
