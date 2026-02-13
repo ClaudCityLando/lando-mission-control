@@ -31,6 +31,8 @@ import { InterventionAlerts } from "@/features/observe/components/InterventionAl
 import { ActivityFeed } from "@/features/observe/components/ActivityFeed";
 import { LiveOutputPanel } from "@/features/observe/components/LiveOutputPanel";
 import { chatHistoryToEntries } from "@/features/observe/lib/chatHistoryToEntries";
+import { CatchUpDigestBanner } from "@/features/mission-control/components/CatchUpDigestBanner";
+import type { Activity } from "@/lib/activity/tracker-accessor";
 
 // Gateway API types
 type SessionsListResult = {
@@ -50,6 +52,41 @@ type CronListResult = {
 type ChatHistoryResult = {
   sessionKey: string;
   messages: Record<string, unknown>[];
+};
+
+// Convert persisted Activity objects from the REST API into ObserveEntry
+// items so they render in the existing ActivityFeed with conversationMode.
+let activityIdCounter = 0;
+const activityToEntries = (activities: Activity[]): import("@/features/observe/state/types").ObserveEntry[] => {
+  return activities.map((a) => {
+    activityIdCounter += 1;
+    const agentId = a.agentId ?? null;
+    const sessionKey = a.sessionKey ?? null;
+    const isConversation = a.type === "conversation-turn";
+    const isCron = a.type === "cron-execution";
+    const isError = a.status === "errored";
+
+    return {
+      id: `act-${activityIdCounter}`,
+      timestamp: new Date(a.startedAt).getTime(),
+      eventType: isConversation ? ("chat" as const) : ("agent" as const),
+      sessionKey,
+      agentId,
+      runId: null,
+      stream: isCron ? "lifecycle" : null,
+      toolName: null,
+      toolPhase: null,
+      toolArgs: null,
+      chatState: isConversation ? "final" : null,
+      errorMessage: isError ? (a.summary ?? "Error") : null,
+      text: a.summary ? a.summary.slice(0, 200) : null,
+      description: a.summary ?? `${a.type} (${a.status})`,
+      severity: isError ? ("error" as const) : ("info" as const),
+      channel: a.channel ?? null,
+      messageRole: isConversation ? ("assistant" as const) : null,
+      fullText: a.summary ?? null,
+    };
+  });
 };
 
 const inferOrigin = (
@@ -90,6 +127,26 @@ export default function MissionControlPage() {
   const pendingEntriesRef = useRef<ReturnType<typeof mapEventFrameToEntry>[]>(
     []
   );
+
+  // Load persisted activity history from Activity Tracker REST API
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/activity?limit=100");
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = data.activities as Activity[] | undefined;
+        if (cancelled || !items || items.length === 0) return;
+        const entries = activityToEntries(items);
+        dispatch({ type: "pushEntries", entries });
+      } catch {
+        // Activity tracker may not be running yet
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, []);
 
   // Load filesystem context (tasks, agents, activity, domainMap)
   useEffect(() => {
@@ -300,6 +357,7 @@ export default function MissionControlPage() {
         cronJobs={cronJobs}
       />
 
+      <CatchUpDigestBanner />
       <InterventionAlerts entries={state.entries} />
 
       <div className="flex min-h-0 flex-1 gap-2">
