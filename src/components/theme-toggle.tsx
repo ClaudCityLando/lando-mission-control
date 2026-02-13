@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-
-const THEME_STORAGE_KEY = "theme";
-
-type ThemeMode = "light" | "dark";
+import {
+  parseTheme,
+  setThemeCookie,
+  THEME_STORAGE_KEY,
+  type ThemeMode,
+} from "@/lib/theme/theme";
 
 const getPreferredTheme = (): ThemeMode => {
   if (typeof window === "undefined") return "light";
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
+  const stored = parseTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+  if (stored) return stored;
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   return prefersDark ? "dark" : "light";
 };
@@ -29,6 +31,7 @@ export const ThemeToggle = () => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(preferred);
     applyTheme(preferred);
+    setThemeCookie(preferred);
   }, []);
 
   const toggleTheme = () => {
@@ -38,6 +41,7 @@ export const ThemeToggle = () => {
         window.localStorage.setItem(THEME_STORAGE_KEY, next);
       }
       applyTheme(next);
+      setThemeCookie(next);
       return next;
     });
   };

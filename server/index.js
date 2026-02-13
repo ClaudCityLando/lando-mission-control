@@ -3,10 +3,14 @@ const next = require("next");
 
 const { createAccessGate } = require("./access-gate");
 const { createGatewayProxy } = require("./gateway-proxy");
+const { createGatewayListener } = require("./gateway-listener");
+const { createActivityTracker } = require("./activity-tracker");
 const { loadUpstreamGatewaySettings } = require("./studio-settings");
 
 const resolveHost = () => {
-  const fromEnv = process.env.HOST?.trim() || process.env.HOSTNAME?.trim();
+  // Only respect explicit host overrides. Many shells export HOSTNAME with the
+  // machine name, which can break localhost-bound reverse proxies.
+  const fromEnv = process.env.HOST?.trim() || process.env.STUDIO_HOST?.trim();
   if (fromEnv) return fromEnv;
   return "0.0.0.0";
 };
@@ -55,6 +59,27 @@ async function main() {
 
   await app.prepare();
   const handleUpgrade = app.getUpgradeHandler();
+
+  // --- Activity Tracker: always-on gateway listener + event persistence ---
+  const tracker = createActivityTracker({
+    log: (...args) => console.info("[activity-tracker]", ...args),
+    logError: (msg, err) => console.error("[activity-tracker]", msg, err),
+  });
+
+  const listener = createGatewayListener({
+    loadUpstreamSettings: async () => {
+      const settings = loadUpstreamGatewaySettings(process.env);
+      return { url: settings.url, token: settings.token };
+    },
+    onEvent: (eventFrame) => tracker.processEvent(eventFrame),
+    onStatus: (s) => console.info(`[activity-tracker] listener: ${s}`),
+    log: (...args) => console.info("[activity-tracker]", ...args),
+    logError: (msg, err) => console.error("[activity-tracker]", msg, err),
+  });
+
+  tracker.start();
+  listener.start();
+  globalThis.__activityTracker = tracker;
 
   const server = http.createServer((req, res) => {
     if (accessGate.handleHttp(req, res)) return;
